@@ -75,6 +75,21 @@ function reapparaitre(auDebut) {
   brad.porte = null;
   brad.porteur = null;
   brad.scenarise = 0;
+  /* Les aptitudes secretes laissent un etat derriere elles. Reapparaitre avec
+     une charge entamee ou un plaquage en cours, c'est reapparaitre en train de
+     faire quelque chose qu'on n'a pas demande. */
+  /* La recharge de coup ne repartait pas non plus. Ça ne se voyait pas tant
+     que le coup partait a l'appui — un quart de seconde d'attente au
+     retour — mais avec la frappe chargee, un compteur de recharge qui traine
+     EMPECHE la charge de commencer : mesure faite, elle demarrait 0,27 s trop
+     tard, soit exactement R.recharge. */
+  brad.recharge = 0;
+  brad.attaque = 0;
+  brad.charge = 0;
+  brad.chargeTiree = false;
+  brad.plaquage = 0;
+  brad.reposPlaquage = 0;
+  reinitialiserTourelle();
   traces.length = 0;
   if (auDebut) { pointSur.x = APPARITION.x; pointSur.y = APPARITION.y; }
 }
@@ -120,7 +135,48 @@ function deplacerY(dt) {
 
 /* --- Simulation ---------------------------------------------------------- */
 
+/* =============================================================================
+   LE FILET ANTI-BLOCAGE
+
+   Un blocage a ete signale au mini-boss du niveau 6 : Brad sur un echafaudage,
+   touche au meme instant, et plus moyen de bouger. Je ne suis pas parvenu a le
+   reproduire — dix combats complets, un balayage de trente-quatre positions
+   avec un coup porte de chaque cote, aucune immobilite. Je ne sais donc pas
+   quelle est la cause exacte, et je ne vais pas faire semblant de l'avoir
+   trouvee.
+
+   Ce filet ne corrige pas la cause : il rend le SYMPTOME impossible a tenir.
+   Si le joueur demande a se deplacer et que Brad n'a pas bouge d'un pixel
+   pendant plus d'un tiers de seconde alors qu'il n'est ni en scene ni assomme,
+   on le degage — d'abord vers le haut, puis dans le sens demande. Un joueur qui
+   appuie sur une direction finit toujours par repartir.
+
+   En jeu normal ce code ne se declenche jamais : pousser contre un mur laisse
+   `vx` non nul, et un Brad immobile volontairement n'appuie sur rien.
+========================================================================== */
+
+const antiBlocage = { images: 0, degagements: 0 };
+
+function filetAntiBlocage(dt) {
+  const veutBouger = entrees.gauche || entrees.droite;
+  const libre = scene === 'jeu' && !(brad.scenarise > 0) && !(brad.assomme > 0);
+  if (!veutBouger || !libre || Math.abs(brad.vx) > 1) { antiBlocage.images = 0; return; }
+
+  antiBlocage.images++;
+  if (antiBlocage.images < 40) return;          // un tiers de seconde a 120 Hz
+  antiBlocage.images = 0;
+  antiBlocage.degagements++;
+
+  const sens = entrees.droite ? 1 : -1;
+  brad.y -= 2;                                  // on le sort de ce qui le tient
+  brad.x += sens * 3;
+  brad.vx = sens * R.vitesseMarche;
+  brad.auSol = false;
+}
+
 function majBrad(dt) {
+  filetAntiBlocage(dt);
+
   /* PENDANT UNE SCENE, LE JOUEUR NE JOUE PLUS.
 
      Les trois secondes qui suivent le dernier coup porte a Kirby 67 sont une
@@ -257,32 +313,165 @@ function zoneAttaque() {
   };
 }
 
+/* =============================================================================
+   LES TROIS APTITUDES SECRETES
+
+   Aucune n'ajoute de touche. C'est la contrainte qu'on s'est donnee, et elle
+   est bonne : un jeu qui se joue a cinq touches doit continuer a se jouer a
+   cinq touches, sinon on n'ajoute pas une aptitude, on ajoute une notice.
+
+     FRAPPE CHARGEE — on tient le bouton de coup. Au-dela d'une demi-seconde
+     Brad brille ; en relachant, le coup porte plus loin et fait le double.
+     Ne rien tenir donne exactement le jeu d'avant.
+
+     PLAQUAGE — frapper EN COURANT a pleine vitesse. Brad se jette en avant et
+     renverse ce qu'il touche. Le geste est le meme, c'est l'elan qui decide.
+
+     TOURELLE — elle suit Brad et tire toute seule. Rien a presser.
+========================================================================== */
+
+const CHARGE_SEUIL = 0.5;        // au-dela, le coup est charge
+const CHARGE_PORTEE = 1.9;       // multiplicateur de portee
+const CHARGE_DEGATS = 2;         // multiplicateur de degats
+const PLAQUAGE_VITESSE = 430;
+const PLAQUAGE_DUREE = 0.26;
+const PLAQUAGE_REPOS = 0.9;
+const TOURELLE_CADENCE = 1.5;
+const TOURELLE_PORTEE = 210;
+
 function majAttaque(dt) {
   brad.recharge = Math.max(0, brad.recharge - dt);
   brad.attaque = Math.max(0, brad.attaque - dt);
+  brad.plaquage = Math.max(0, (brad.plaquage || 0) - dt);
+  brad.reposPlaquage = Math.max(0, (brad.reposPlaquage || 0) - dt);
 
-  if (attaquePresseeCeTick && brad.recharge <= 0) {
+  /* --- La charge. On compte le temps PENDANT lequel le bouton est tenu ; le
+     coup part au relachement. Sans l'aptitude, `charge` reste a zero et tout
+     se passe comme avant : le coup part a l'appui. */
+  const aCharge = aSecret('frappe-chargee');
+  if (aCharge) {
+    if (entrees.attaque && brad.recharge <= 0 && !brad.porte) {
+      brad.charge = (brad.charge || 0) + dt;
+    }
+  } else {
+    brad.charge = 0;
+  }
+
+  const relache = aCharge && brad.charge > 0 && !entrees.attaque;
+  const declenche = aCharge ? relache : attaquePresseeCeTick;
+
+  if (declenche && brad.recharge <= 0) {
     if (brad.porte) {
       lancerBoule();
+    } else if (tenterPlaquage()) {
+      // Le plaquage remplace le coup : on ne fait pas les deux.
     } else {
-      brad.attaque = R.dureeAttaque;
-      brad.recharge = R.recharge;
+      brad.chargeTiree = aCharge && brad.charge >= CHARGE_SEUIL;
+      brad.attaque = R.dureeAttaque * (brad.chargeTiree ? 1.35 : 1);
+      brad.recharge = R.recharge * (brad.chargeTiree ? 1.6 : 1);
       brad.toucheParAttaque = new Set();
+      if (brad.chargeTiree) {
+        audio.bruit('onde');
+        secousse(3, 0.12);
+      }
     }
   }
+  if (relache || attaquePresseeCeTick) brad.charge = 0;
   attaquePresseeCeTick = false;
 
   if (ondePresseeCeTick && brad.shy >= 100) declencherOnde();
   ondePresseeCeTick = false;
 
+  majTourelle(dt);
+  if (brad.plaquage > 0) degatsDuPlaquage();
+
   if (brad.attaque <= 0) return;
   const zone = zoneAttaque();
+  if (brad.chargeTiree) {
+    // La zone s'allonge DEVANT Brad, elle ne grossit pas autour de lui : on
+    // frappe plus loin, on ne frappe pas dans son dos.
+    const rab = R.porteeAttaque * (CHARGE_PORTEE - 1);
+    zone.w += rab;
+    if (brad.sens < 0) zone.x -= rab;
+  }
+  const force = Math.max(1, Math.round(R.degatsBrad * bonusDegats()
+                                       * (brad.chargeTiree ? CHARGE_DEGATS : 1)));
   for (const e of ennemis) {
     if (e.etat === 'mort' || brad.toucheParAttaque.has(e.id)) continue;
     if (!chevauche(zone, e)) continue;
     brad.toucheParAttaque.add(e.id);
-    blesserEnnemi(e, Math.max(1, Math.round(R.degatsBrad * bonusDegats())), brad.sens);
+    blesserEnnemi(e, force, brad.sens);
   }
+}
+
+/* Le plaquage ne se declenche qu'a pleine course : c'est l'elan qui fait la
+   difference entre un coup de poing et une charge. */
+function tenterPlaquage() {
+  if (!aSecret('plaquage')) return false;
+  if (!brad.auSol || brad.reposPlaquage > 0) return false;
+  if (Math.abs(brad.vx) < R.vitesseCourse * 0.86) return false;
+  brad.plaquage = PLAQUAGE_DUREE;
+  brad.reposPlaquage = PLAQUAGE_REPOS;
+  brad.vx = brad.sens * PLAQUAGE_VITESSE;
+  brad.toucheParPlaquage = new Set();
+  audio.bruit('onde');
+  secousse(5, 0.18);
+  return true;
+}
+
+function degatsDuPlaquage() {
+  const force = Math.max(2, Math.round(R.degatsBrad * bonusDegats() * 1.6));
+  for (const e of ennemis) {
+    if (e.etat === 'mort' || brad.toucheParPlaquage.has(e.id)) continue;
+    if (!chevauche(brad, e)) continue;
+    brad.toucheParPlaquage.add(e.id);
+    blesserEnnemi(e, force, brad.sens);
+  }
+}
+
+/* La tourelle. Elle flotte derriere Brad et tire sur le Serra eveille le plus
+   proche. Elle ne vise pas ce qui dort : sinon elle nettoie le niveau avant
+   que le joueur n'arrive, et il ne reste plus rien a jouer. */
+const tourelle = { x: 0, y: 0, recharge: 0, phase: 0, active: false };
+
+function reinitialiserTourelle() {
+  tourelle.active = false; tourelle.recharge = 0; tourelle.phase = 0;
+}
+
+function majTourelle(dt) {
+  tourelle.active = aSecret('tourelle') && scene === 'jeu';
+  if (!tourelle.active) return;
+  tourelle.phase += dt;
+  const viseX = brad.x + brad.w / 2 - brad.sens * 26;
+  const viseY = brad.y - 14 + Math.sin(tourelle.phase * 2.4) * 3;
+  tourelle.x += (viseX - tourelle.x) * Math.min(1, 6 * dt);
+  tourelle.y += (viseY - tourelle.y) * Math.min(1, 6 * dt);
+
+  tourelle.recharge = Math.max(0, tourelle.recharge - dt);
+  if (tourelle.recharge > 0) return;
+
+  let cible = null, meilleure = TOURELLE_PORTEE;
+  for (const e of ennemis) {
+    if (e.etat === 'mort' || e.dort) continue;
+    const d = Math.hypot(e.x + e.w / 2 - tourelle.x, e.y + e.h / 2 - tourelle.y);
+    if (d < meilleure) { meilleure = d; cible = e; }
+  }
+  if (!cible) return;
+  tourelle.recharge = TOURELLE_CADENCE;
+  const dx = cible.x + cible.w / 2 - tourelle.x;
+  const dy = cible.y + cible.h / 2 - tourelle.y;
+  const n = Math.hypot(dx, dy) || 1;
+  /* Le projectile reprend la forme d'une boule renvoyee — `aBrad` — pour
+     n'avoir a toucher NI la physique NI les collisions. `tourelle` sert
+     uniquement au dessin, et `vy` non nul est laisse tel quel : les boules de
+     Brad ne subissent pas la gravite, celle-ci suit donc sa ligne de visee. */
+  boules.push({
+    x: tourelle.x - 5, y: tourelle.y - 5, w: 10, h: 10,
+    vx: (dx / n) * 330, vy: (dy / n) * 330,
+    aBrad: true, tourelle: true, vie: 1.4, phase: 0, posee: 0,
+    degats: Math.max(1, Math.round(R.degatsBrad * bonusDegats() * 0.75)),
+  });
+  audio.bruit('coup');
 }
 
 function declencherOnde() {
@@ -1311,10 +1500,18 @@ function majBoules(dt) {
     if (pose) { b.posee = 6; b.vie = Math.min(b.vie, 6); }
 
     if (b.aBrad) {
-      // Boule renvoyee : elle traverse et elimine ce qu'elle touche, Lanceur compris.
+      /* Boule renvoyee : elle elimine ce qu'elle touche, Lanceur compris — un
+         renvoi reussi est un exploit, il merite de tout coucher.
+
+         Le tir de la TOURELLE emprunte la meme physique mais pas la meme
+         force : il porte `degats`, et il ne franchit pas l'invulnerabilite.
+         Sans cette distinction, la tourelle tuait un Serra par tir, boss
+         compris — une aptitude a deux Brad Coins qui gagnait le jeu toute
+         seule. */
       for (const e of ennemis) {
         if (e.etat === 'mort' || !chevauche(b, e)) continue;
-        blesserEnnemi(e, 999, Math.sign(b.vx) || 1, true);
+        if (b.tourelle) blesserEnnemi(e, b.degats || 1, Math.sign(b.vx) || 1);
+        else blesserEnnemi(e, 999, Math.sign(b.vx) || 1, true);
         b.vie = 0;
         break;
       }
@@ -1441,6 +1638,12 @@ function bouclier(x, y) {
 
    `cumul` est l'unite affichee ('BC', 'PV'...). Sans elle, aucun cumul. */
 function texteFlottant(x, y, texte, couleur, cumul) {
+  /* Muet pendant la bande-annonce. Les textes flottants sont du retour
+     d'information destine au joueur — « il encaisse », « sa coque tient »,
+     « +1 BC ». Dans un montage ils passent pour des sous-titres, et chaque
+     plan prend l'air d'un tutoriel. Le seul texte d'une bande-annonce doit
+     etre celui qu'on y a mis expres. */
+  if (CINEMA) return;
   if (cumul) {
     for (const f of effets) {
       if (f.genre !== 'texte' || f.cumul !== cumul) continue;

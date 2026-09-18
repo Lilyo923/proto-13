@@ -671,6 +671,7 @@ function bulle(x, y, texte) {
 }
 
 function hudHub(c) {
+  if (CINEMA) return;                  // la bande-annonce filme la base, pas l'ATH
   // Bandeau du haut : monnaie et rappel
   ctx.fillStyle = 'rgba(9,11,20,.55)';
   ctx.fillRect(0, 0, LARGEUR, 26);
@@ -948,7 +949,7 @@ function dessinerBoutique() {
   /* Ce qui viendra. On le dit clairement plutot que de laisser croire que la
      section est complete — et on ne met pas de bouton, parce qu'un bouton qui
      ne fait rien est pire qu'une ligne de texte honnete. */
-  if (ongletBoutique === 2) {
+  if (ongletBoutique === 2 && SECRETS_A_VENIR.length) {
     ctx.font = 'italic 9px system-ui, sans-serif';
     ctx.fillStyle = 'rgba(168,216,255,.45)';
     ctx.fillText('À venir : ' + SECRETS_A_VENIR.join(' · '), 70, y + 4);
@@ -1075,9 +1076,82 @@ function dessinerVestiaire() {
     ctx.fillText(u.detail, depart, HAUTEUR - 48);
   }
 
+  dessinerCodeVestiaire();
+
   ctx.font = '9px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,.3)';
   ctx.fillText('Flèches choisir  ·  Entrée porter  ·  Échap sortir', 56, HAUTEUR - 33);
+}
+
+/* -----------------------------------------------------------------------------
+   LA SAISIE DE CODE
+
+   Certains uniformes ne se gagnent pas, ils se SAVENT. Le champ est toujours
+   la, discret, en bas a droite du vestiaire : on tape, ça s'inscrit, Entree
+   valide. Pas d'onglet, pas de bouton — quelqu'un qui n'a pas de code ne le
+   remarquera meme pas, et quelqu'un qui en a un le trouvera tout de suite.
+-------------------------------------------------------------------------- */
+
+const vestiaireCode = { saisie: '', message: '', messageT: 0, succes: false };
+
+function tapeCodeVestiaire(c) {
+  if (vestiaireCode.saisie.length >= 12) return;
+  vestiaireCode.saisie += c.toUpperCase();
+  audio.bruit('menu');
+}
+
+function effaceCodeVestiaire() {
+  vestiaireCode.saisie = vestiaireCode.saisie.slice(0, -1);
+  audio.bruit('menu');
+}
+
+function validerCodeVestiaire() {
+  const saisie = vestiaireCode.saisie.trim();
+  if (!saisie) return false;
+  const c = entrerCodeUniforme(saisie);
+  vestiaireCode.saisie = '';
+  vestiaireCode.messageT = 3.6;
+  if (!c) {
+    vestiaireCode.succes = false;
+    vestiaireCode.message = 'Code inconnu.';
+    audio.bruit('refus');
+    return true;
+  }
+  const u = UNIFORMES.find(x => x.cle === c.cle);
+  vestiaireCode.succes = true;
+  vestiaireCode.message = (u ? u.nom : 'Uniforme') + ' débloqué.';
+  audio.bruit('victoire');
+  if (u) {
+    indexVestiaire = UNIFORMES.indexOf(u);
+    braddyDit('Tiens donc. Tu connais des gens.');
+  }
+  return true;
+}
+
+function dessinerCodeVestiaire() {
+  if (vestiaireCode.messageT > 0) vestiaireCode.messageT -= 1 / 60;
+
+  const x = LARGEUR - 208, y = HAUTEUR - 46, l = 152, h = 18;
+  ctx.font = '9px system-ui, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = 'rgba(255,255,255,.3)';
+  ctx.fillText('Code', x, y - 4);
+
+  ctx.fillStyle = 'rgba(255,255,255,.05)';
+  ctx.fillRect(x, y, l, h);
+  ctx.strokeStyle = vestiaireCode.saisie ? 'rgba(232,182,44,.6)' : 'rgba(255,255,255,.14)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x + .5, y + .5, l - 1, h - 1);
+
+  ctx.font = 'bold 11px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = vestiaireCode.saisie ? '#e8b62c' : 'rgba(255,255,255,.22)';
+  ctx.fillText(vestiaireCode.saisie || 'tape ici…', x + 7, y + 13);
+
+  if (vestiaireCode.messageT > 0) {
+    ctx.font = '9px system-ui, sans-serif';
+    ctx.fillStyle = vestiaireCode.succes ? '#7ee08a' : '#e2553b';
+    ctx.fillText(vestiaireCode.message, x, y + 30);
+  }
 }
 
 function porterUniformeCourant() {

@@ -185,6 +185,7 @@ const PLANCHES_UNIFORMES = {
   'classique-turquoise': 'assets/brad/brad-classique-turquoise.png',
   'classique-bordeaux':  'assets/brad/brad-classique-bordeaux.png',
   'dore':             'assets/brad/brad-dore.png',
+  '3irl':             'assets/brad/brad-3irl.png',
 };
 
 const planchesBrad = {};        // cle -> Image chargee
@@ -226,6 +227,11 @@ function precharger(surProgres) {
     const d = NIVEAUX[id];
     if (d && d.musique) taches.push(audio.precharger(sourceMusique(d.musique)));
   });
+  /* La piste de la bande-annonce est prechargee avec les autres, et ce n'est
+     pas du confort : tout le montage est cale sur elle. Une piste qui arrive en
+     retard, c'est un montage qui demarre au milieu d'une mesure. Elle ne pese
+     que 1,2 Mo — un vingtieme de ce qui est deja charge. */
+  taches.push(audio.precharger(sourceMusique('bande-annonce')));
 
   let faits = 0;
   const total = taches.length;

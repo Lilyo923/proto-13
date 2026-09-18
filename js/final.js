@@ -119,7 +119,18 @@ const F_DUREE_ONDE = 0.7;
 
 /* --- Kirby 67 ------------------------------------------------------------- */
 
-const F_PV_KIRBY = 3;
+/* LA DUREE DU COMBAT FINAL.
+
+   Mesure au robot sur six combats : 32,7 s en moyenne, six victoires sur six,
+   avec 13 points de vie restants sur 24. Trop court pour une fin de jeu —
+   « combat de boss final 2 trop rapide ».
+
+   Deux leviers, et on tire les deux d'un cran plutot qu'un seul a fond : un
+   quatrieme point de vie a Kirby 67, et sept Serra a abattre par decharge au
+   lieu de six. Le nombre de Serra a coucher passe donc de 18 a 28. La
+   troisieme phase reste la derniere — on allonge le combat, on ne rajoute pas
+   une mecanique que personne n'a demandee. */
+const F_PV_KIRBY = 4;
 const F_REPOS = [2.4, 1.9, 1.4];         // entre deux attaques, par phase
 /* L'ASPIRATION, ET POURQUOI ELLE N'ASPIRE PLUS SI FORT.
 
@@ -235,6 +246,13 @@ function demarrerCombatFinal(avecCinematique) {
   finale.message = '';
   finale.messageT = 0;
   finale.banniere = 3.4;
+  /* Le compte a rebours vers la cinematique de fin n'etait pas remis a zero
+     ici. Il ne l'etait qu'en s'ecoulant. Quitter la place pendant les trois
+     secondes de victoire (Echap renvoie a la base) laissait donc un compteur
+     entame dans l'objet, qu'une revanche ramenait avec elle. Aucun blocage
+     observe, mais un etat qui traine entre deux parties n'a rien a y faire. */
+  finale.attenteFin = 0;
+  finale.tueur = '';
 
   /* Brad garde ses ameliorations : c'est tout l'interet du passage a la
      boutique avant de franchir le portail. On lui ajoute quelques points de
@@ -453,7 +471,7 @@ function tuerSbireFinal(i) {
 /* Combien de Serra il faut abattre pour une decharge. Six : assez pour que la
    jauge soit un objectif, assez peu pour qu'une vague entiere la remplisse
    presque. */
-const F_SBIRES_PAR_DECHARGE = 6;
+const F_SBIRES_PAR_DECHARGE = 7;
 
 function tirerOndeFinale() {
   const b = finale.brad;
@@ -498,8 +516,15 @@ function blesserKirbyFinal() {
 
   if (k.pv <= 0) { gagnerCombatFinal(); return; }
 
+  const avant = k.phase;
   k.phase = Math.min(2, F_PV_KIRBY - k.pv);
-  const nouvelle = ['L\'ASPIRATION', 'LA CHARGE', 'LA PLUIE DE MEULES'][k.phase];
+  /* Au quatrieme point de vie, la phase ne monte plus : les trois mecaniques
+     sont deja la. Annoncer « LA PLUIE DE MEULES » une seconde fois donnerait
+     l'impression d'un bug. On annonce alors ce qui est vrai — il ne lui reste
+     rien a sortir, il n'a plus que l'acharnement. */
+  const nouvelle = k.phase > avant
+    ? ['L\'ASPIRATION', 'LA CHARGE', 'LA PLUIE DE MEULES'][k.phase]
+    : 'IL S\'ACHARNE';
   annoncerFinal('IL PASSE À ' + (k.pv) + ' — ' + nouvelle, 3.2);
 }
 

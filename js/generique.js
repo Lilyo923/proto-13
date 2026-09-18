@@ -377,7 +377,8 @@ function carteTitre() {
 
   ctx.font = '10px system-ui, sans-serif';
   ctx.fillStyle = 'rgba(255,255,255,.28)';
-  ctx.fillText('février 2027', LARGEUR / 2, 250);
+  // La date de SORTIE PUBLIQUE, pas celle du developpement.
+  ctx.fillText('janvier 2027', LARGEUR / 2, 250);
   ctx.textAlign = 'left';
 }
 

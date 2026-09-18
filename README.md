@@ -1,4 +1,4 @@
-# Brad Bitt, mais le jeu — prototype 17
+# Brad Bitt, mais le jeu — prototype 22
 
 Le niveau d'introduction devient un vrai parcours, avec tout ce qui l'entoure :
 écran d'accueil, animation des studios, menu jouable, musique, sauvegarde et
@@ -2061,3 +2061,931 @@ converti en `.m4a` + `.mp3`.
    ennemis 1/1 · 60fps`) s'affiche toujours pendant le jeu. Il est utile pour
    déboguer, mais il n'a rien à faire dans une version jouable. Je peux le
    passer sous F1 avec le reste — dis-moi.
+
+---
+
+# Prototype 18 — la bande-annonce, calée sur la musique
+
+## Ce que l'analyse du morceau a donné
+
+Tu as demandé si je pouvais analyser un fichier audio et faire tomber les
+coupures dessus. Voici ce que « Like this » a donné — mesuré, pas estimé.
+
+### Le fichier
+
+WAV 48 kHz stéréo 16 bits, PCM non compressé, 2 min 32,6. Crête vraie
+**−0,2 dBFS**, aucun échantillon écrêté, **−13,8 LUFS** intégré, plage de
+dynamique 3,6 LU, décalage continu négligeable. Techniquement irréprochable.
+
+### Le tempo
+
+**70,003 BPM.** Ce n'est pas un arrondi de complaisance : sur les 177 temps
+détectés, l'écart moyen à une grille parfaite est de **7,6 ms**. Le morceau est
+quantifié.
+
+| grandeur | valeur |
+|---|---|
+| un temps | 0,857110 s |
+| une mesure | 3,428440 s |
+| premier temps | 0,0379 s |
+| durée | 44 mesures, dernier son à 2 min 30,87 |
+
+### Où tombe le premier temps
+
+La question n'est pas anodine : se tromper d'un temps, c'est monter tout le
+film à contretemps. La détection d'attaque en pleine bande donnait une réponse,
+la structure du morceau en donnait une autre. J'ai tranché en séparant les
+instruments :
+
+| emplacement | grave (< 120 Hz) | aigu (1,8–6 kHz) |
+|---|---|---|
+| **temps 1** | **110,8** | 68,1 |
+| temps 2 | 46,8 | **113,6** |
+| temps 3 | 3,6 | 80,9 |
+| temps 4 | 41,1 | **117,7** |
+
+La grosse caisse marque le 1, la caisse claire les 2 et 4, et le 3 n'a presque
+aucune basse. C'est un placement de batterie de manuel, et il ne laisse aucun
+doute : la mesure commence à 0,0379 s. La détection en pleine bande s'était
+laissé tromper par la caisse claire, plus forte que la grosse caisse.
+
+### La structure
+
+**Des blocs de 12 mesures exactement.** Les quatre changements tombent sur des
+débuts de mesure à moins de 20 ms près.
+
+| section | mesures | de | à |
+|---|---|---|---|
+| intro | 1–4 | 0:00,04 | 0:13,75 |
+| **refrain** | 5–16 | 0:13,75 | 0:54,89 |
+| couplet | 17–28 | 0:54,89 | 1:36,03 |
+| **refrain** | 29–40 | 1:36,03 | 2:17,18 |
+| outro | 41–44 | 2:17,18 | 2:30,87 |
+
+Tu avais raison : le refrain revient **deux fois**, identique.
+
+## Le montage du morceau
+
+Tu as choisi 1 min 09 : mesures 1–16, puis 41–44. Le raccord est à **0:54,89**,
+exactement sur une barre de mesure — la fin du refrain enchaîne sur l'outro.
+
+Fondu croisé à puissance constante de 0,15 s, centré sur le raccord, pour que
+la réverbération du refrain ne soit pas coupée net. Puis **−1 dB de marge**
+avant encodage : à −0,2 dBFS, un encodage avec perte peut faire dépasser 0 dB à
+la lecture et grésiller.
+
+**Le résultat a été vérifié, pas supposé :**
+
+- durée **68,6067 s**, soit 20 mesures à la milliseconde près ;
+- tempo après montage : **70,007 BPM** (70,003 avant) — la pulsation n'a pas
+  bougé ;
+- un temps est détecté **exactement sur le raccord** (54,892 s), et les
+  intervalles qui suivent font 859 ms, la valeur nominale ;
+- pas de clic : le plus grand saut d'échantillon au raccord vaut **0,206**,
+  contre **0,560** ailleurs dans le morceau. Le raccord est plus doux qu'une
+  attaque de batterie ordinaire.
+
+La piste est livrée sous `assets/audio/bande-annonce.m4a` et `.mp3`. Les deux
+encodages ressortent **alignés à l'échantillon** sur la source.
+
+## La bande-annonce
+
+Un bouton **« Bande-annonce »** au menu principal. 28 plans sur 20 mesures.
+
+**Rien n'est pré-calculé.** Les plans de jeu font tourner le moteur : le décor
+défile, les Serra se réveillent et patrouillent, Brad court pour de vrai. Ce
+qui est à l'écran est le jeu, pas une image du jeu. Charger un niveau coûte
+entre 0,02 et 0,22 ms — on peut donc changer de décor sur un temps sans le
+moindre à-coup.
+
+**L'horloge du montage est `audio.currentTime`, jamais un compteur interne.**
+Un compteur interne dérive : une image sautée, un onglet ralenti, et l'image ne
+tombe plus avec le son. On avance localement pour la fluidité, et on se recale
+sur la piste dès que l'écart dépasse 60 ms. Sans piste (fichier absent, lecture
+refusée), le compteur interne prend le relais et le montage tourne en silence.
+
+**Mesure :** les 27 coupures tombent à **4,0 ms** de leur temps en moyenne,
+**8,1 ms** au pire. Une image à 120 Hz dure 8,3 ms.
+
+### Le déroulé
+
+| mesures | contenu |
+|---|---|
+| 1–4 | logos IMAGINe et HwR, puis Brad dans les tournesols, au pas |
+| 5–6 | la discothèque, la ville — coupures à la demi-mesure, éclair blanc sur l'entrée |
+| 6–7 | **« 10 NIVEAUX FARFELUS »** |
+| 7–9 | tournesols, vallée, ville gelée, manoir hanté |
+| 9–10 | **« DES BOSS QUI NE RIGOLENT PAS »** |
+| 10–12 | le Colosse, le Séraphin, le Balistique — au contact |
+| 12–13 | **« UNE BASE, UNE BOUTIQUE ET UNE SALLE D'ARCADE »** |
+| 13–14 | la base |
+| 14–15 | les toits de Paris, la salle du tokamak |
+| 15 | **rafale** : quatre plans, un par temps |
+| 16 | **Kirby 67 à contre-jour** — tenu une mesure entière |
+| 17–20 | le titre, la bêta, la sortie, les deux studios |
+
+Kirby 67 n'apparaît qu'en silhouette : ni son visage, ni l'arène finale. La
+bande-annonce sort avant la bêta, la fin du jeu reste une surprise.
+
+### L'interface disparaît
+
+Une bande-annonce filme le jeu, pas l'écran de jeu. Pendant le montage, la
+barre de vie, le bandeau de mise au point, les panneaux d'aide, l'ATH de la
+base et les textes flottants sont muets. Le seul texte à l'écran est celui
+qu'on y a mis exprès.
+
+## Le défaut que le test « aucun plan vide » a trouvé
+
+Il mérite d'être raconté, parce qu'il était invisible à la lecture du code.
+
+`majTransition` n'est pas appelée pendant un plan : elle déclencherait un fondu
+au noir en plein montage dès que Brad franchit une limite de zone. Mais c'est
+elle qui tient `zoneAffichee` à jour — **et `zoneAffichee` ne sert pas qu'à la
+palette : `ennemiHorsZone` s'en sert pour décider quels ennemis dessiner.**
+
+La zone restait donc à 0 pour tout le montage. Résultat : Brad au milieu de la
+piste de danse, dans le décor de la file d'attente, et **tous les Serra
+invisibles**. Cinq d'entre eux étaient dans le cadre ; aucun n'était dessiné.
+
+Je ne l'avais pas vu à l'œil : sur des vignettes sombres, un plan vide
+ressemble à un plan calme. C'est le test qui compte les Serra réellement
+visibles — dans le cadre en x **et** en y, et pas endormis — qui l'a sorti.
+
+Deux corrections : la zone est mise à jour sèchement à chaque image, sans
+fondu ; et les Serra **dans le cadre** sont réveillés à l'entrée du plan. Ils
+dorment jusqu'à ce que Brad approche, ce qui est voulu dans le jeu — mais un
+plan dure deux secondes, on n'a pas le temps de les réveiller en marchant.
+
+## Le choix des plans, mesuré
+
+Les positions de caméra ne sont pas choisies à l'œil. Pour chaque niveau, j'ai
+noté chaque position de départ possible en comptant les Serra **réellement
+visibles** à 0,6 s et à 1,2 s après la coupure, et j'ai gardé le minimum des
+deux — pour qu'un plan qui se vide en cours de route soit puni. Les treize
+plans de jeu sont les meilleures notes de leur niveau.
+
+## Le carré du logo HwR
+
+Le carré ne disparaissait pas par moments : **il n'a jamais existé**. Le
+fichier `logo-hwr.png` ne contient que les lettres blanches sur du transparent.
+Sur le fond sombre de l'intro, il n'y avait rien à afficher, et rien à corriger
+dans le code qui l'affichait.
+
+Il est maintenant dessiné : plaque bleu nuit arrondie, filet clair pour qu'elle
+se détache. Le `#12141f` demandé est presque le `#0a0c14` du fond de l'intro —
+une plaque de cette couleur exacte aurait été invisible, ce qui ramenait le
+problème de départ. Elle est donc relevée d'un cran. Une seule fonction,
+`dessinerLogoHwr`, utilisée par l'intro, la page des crédits et la
+bande-annonce.
+
+**À signaler :** ton fichier contient quatre **traits de coupe blancs** dans
+les coins, en blanc plein. Invisibles avant sur du noir, ils apparaissent
+maintenant comme quatre points sur la plaque. Je peux les masquer, ou tu
+m'envoies un export propre — je n'y touche pas sans que tu me le dises.
+
+## Les dates
+
+Le générique affichait « février 2027 ». Corrigé en **janvier 2027**, pour
+coller à la sortie publique du 9. La bande-annonce affiche les deux dates :
+bêta 27–29 novembre 2026, sortie 9 janvier 2027.
+
+## Un test qui mesurait le hasard
+
+L'assertion « le combat final coûte cher » jugeait **une** partie contre un
+seuil fixe. Mesure sur quatorze combats : le robot finit entre 11 et 22 PV sur
+24, moyenne 14,1, écart-type 3,3. Le seuil tombait donc du bon côté onze fois
+sur quatorze.
+
+Première correction — trois combats, jugés à la médiane — insuffisante : la
+médiane de trois tirages dépasse encore le seuil une fois sur vingt, et c'est
+arrivé au premier essai. Correction retenue : **cinq combats, jugés à la
+moyenne**. L'écart-type de cette moyenne est de 1,5 : le seuil est à plus de
+deux écarts-types. Le test mesure de nouveau la difficulté, et non un tirage au
+sort.
+
+## Vérification
+
+**261 vérifications, 0 échec.** Dix-neuf sont nouvelles :
+
+- les 28 plans passent tous à l'écran, et **chaque coupure tombe sur son temps
+  à moins d'une image** (4,0 ms en moyenne, 8,1 ms au pire) ;
+- le montage dure exactement 20 mesures et rend la main au menu à la fin ;
+- **aucun plan de jeu n'est vide** — au moins un Serra éveillé et visible du
+  début à la fin de chacun des quatorze ;
+- les trois boss apparaissent, vivants, et **dans le cadre** ;
+- le mode cinéma s'active puis se désactive ; le bandeau de mise au point ne
+  s'affiche pas ; les textes flottants sont muets ;
+- l'horloge **se recale sur la piste** quand on la fait dériver d'une
+  demi-seconde ;
+- **sans piste, le montage avance quand même** — un fichier absent ne fige pas
+  un écran noir ;
+- **la sauvegarde du joueur ressort intacte** après un montage complet ;
+- le menu propose « Bande-annonce », l'entrée lance le montage, et l'on en
+  ressort au menu ;
+- le carré du logo HwR est dessiné et se détache du fond de l'intro.
+
+Le vérificateur de géométrie passe sur les douze niveaux.
+
+## Les musiques
+
+Six manquent toujours. La septième, celle de la bande-annonce, est livrée.
+
+| fichier attendu | à quel moment |
+|---|---|
+| `assets/audio/niveau8.m4a` | le complexe scientifique |
+| `assets/audio/niveau9.m4a` | la lune |
+| `assets/audio/niveau10.m4a` | le manoir de Kirby 67 |
+| `assets/audio/mini-kirby.m4a` | le premier combat, salle du trône |
+| `assets/audio/mega-kirby.m4a` | le combat final, à Lille |
+| `assets/audio/generique.m4a` | le générique |
+| ~~`assets/audio/bande-annonce.m4a`~~ | **livrée dans ce prototype** |
+
+---
+
+# Prototype 19 — la bande-annonce, corrigée
+
+Cinq retours, cinq corrections. Le principal d'abord.
+
+## 1. Brad tombait dans les trous
+
+**C'était le défaut le plus voyant, et la cause était bête :** il sautait **à
+intervalle fixe**, une fois par seconde environ, sans jamais regarder où il
+mettait les pieds. Quand un trou arrivait entre deux sauts, il tombait — et la
+caméra continuait d'avancer sans lui.
+
+Il saute maintenant **parce qu'il y a un trou**, avec les trois règles du robot
+qui traverse les niveaux dans la suite de vérification :
+
+1. pas de sol devant à une tuile → sauter ;
+2. **le bouton de saut se tient** pendant toute la montée. Le relâcher aussitôt
+   déclenche la gravité renforcée du saut court : Brad ne monte plus qu'au tiers
+   de la hauteur et retombe dans le trou qu'il visait ;
+3. en l'air, en train de tomber, au-dessus du vide, avec un appui derrière :
+   freiner.
+
+**Mesure : 0 chute sur 15 plans**, chacun simulé 3,5 s — plus longtemps
+qu'aucun plan ne dure. C'est vérifié à chaque exécution de la suite : une seule
+chute la fait échouer, parce que dans une bande-annonce une seule se voit.
+
+## 2. Pourquoi certaines coupures « sonnaient » mal
+
+Les coupures étaient justes à 8 ms près. Le problème n'était pas la précision,
+c'était **le choix du temps**.
+
+Le premier montage coupait toutes les deux mesures, donc sur les temps 1 et 3.
+Or la mesure des deux bandes de fréquence dit ceci :
+
+| temps | grave (< 120 Hz) | aigu (1,8–6 kHz) | |
+|---|---|---|---|
+| 1 | **110,8** | 68,1 | la grosse caisse |
+| 2 | 46,8 | **113,6** | la caisse claire |
+| 3 | 3,6 | 80,9 | **presque rien** |
+| 4 | 41,1 | **117,7** | la caisse claire |
+
+**Le temps 3 est un trou dans le morceau.** Une coupure sur trois tombait donc
+dans le silence — et c'est exactement ce qui s'entendait.
+
+Le montage coupe maintenant sur les temps **1 et 4** : des plans de 3 temps
+suivis d'un plan d'1 temps. Ce découpage pousse vers la mesure suivante au lieu
+de la couper en deux. Le seul temps 3 encore utilisé est dans la rafale, où la
+régularité porte la pulsation. Un test le vérifie et refuse toute coupure sur
+un temps faible hors rafale.
+
+## 3. Brad dort, puis ouvre les yeux
+
+Nouveau plan, exactement au format demandé : **10,3 s de noms de studios**
+(mesures 1 à 3), puis **3,4 s où Brad dort** (mesure 4) — et le refrain part
+sur le temps suivant.
+
+Une chambre, une fenêtre, la lune, des Zzz qui montent. À 2,5 s ses yeux
+s'ouvrent en deux éclats, un « ! » apparaît, il se redresse d'un coup, la
+lumière monte — et 0,9 s plus tard le montage explose sur la première mesure du
+refrain.
+
+Le plan est dessiné à la main plutôt que joué dans un niveau : il n'existe pas
+de chambre dans le jeu, et un plan aussi court doit être lisible tout de suite.
+
+**Un détail qui a demandé deux essais :** une rotation d'un quart de tour autour
+des pieds met l'axe du corps à la hauteur du point d'ancrage — donc la moitié de
+Brad sous le matelas. L'ancrage est relevé de la demi-épaisseur du corps quand
+il est couché, et ce décalage revient à zéro quand il se redresse.
+
+## 4. Le carré du logo HwR
+
+Les traits ne se voyaient pas : 1 pixel à 16 % d'opacité sur 104 pixels de côté,
+c'est invisible. Le filet fait maintenant **2 px à 62 %**, et la plaque est
+**translucide** pour que le fond de la bande-annonce passe au travers, comme
+demandé. Le carré se lit comme un cadre posé sur l'image, plus comme une tache
+opaque.
+
+## 5. Le centrage de « BRAD BITT »
+
+Le bloc était calé trop haut, et le filet supérieur mordait sur les capitales.
+Le bloc titre + sous-titre est maintenant centré sur le milieu de l'écran
+(150 → 212, centre 181 pour un écran de 360), et les deux filets sont posés
+symétriquement autour de lui.
+
+## 6. La mention finale
+
+La ligne de pied de page du dernier carton devient :
+
+> Plusieurs agents conversationnels ont été utilisés dans la création de ce jeu.
+> L'idée et le concept général ont été imaginés par un humain.
+
+## Le déroulé, à jour
+
+| mesures | temps | contenu |
+|---|---|---|
+| 1–2 | 0–6 | IMAGINe Studio |
+| 2–4 | 7–11 | HwR Engine |
+| 4 | 12–15 | **Brad dort, puis ouvre les yeux** |
+| 5 | 16, 19 | la discothèque · la ville |
+| 6 | 20 | **« 10 NIVEAUX FARFELUS »** |
+| 7 | 24, 27 | les tournesols · la vallée |
+| 8 | 28, 31 | la ville gelée · le manoir hanté |
+| 9 | 32 | **« DES BOSS QUI NE RIGOLENT PAS »** |
+| 10–12 | 36, 40, 44 | le Colosse · le Séraphin · le Balistique |
+| 12 | 47 | la lune |
+| 13 | 48 | **« UNE BASE, UNE BOUTIQUE ET UNE SALLE D'ARCADE »** |
+| 14 | 52, 55 | la base · les toits de Paris |
+| 15 | 56–59 | **rafale** : le tokamak, la discothèque, le manoir, la lune |
+| 16 | 60 | **Kirby 67 à contre-jour** |
+| 17–20 | 64, 68, 72, 76 | le titre · la bêta · la sortie · les studios |
+
+## Vérification
+
+**263 vérifications, 0 échec.** Deux sont nouvelles, et ce sont les deux qui
+comptent :
+
+- **Brad ne tombe dans aucun trou, sur aucun plan** — 15 plans, 3,5 s chacun ;
+- **aucune coupure ne tombe sur le temps faible de la mesure**, hors rafale.
+
+Les coupures tombent à **4,0 ms** de leur temps en moyenne, **8,1 ms** au pire.
+Le vérificateur de géométrie passe sur les douze niveaux.
+
+---
+
+# Prototype 20 — Brad se bat contre les mini-boss
+
+## Le défaut
+
+Pendant les plans de boss, Brad avançait tout droit, exactement comme dans un
+plan de niveau. Il dépassait donc le boss en une demi-seconde et finissait
+**dans le coin droit, à courir contre le mur sans s'arrêter** — pendant que la
+caméra le suivait, l'adversaire hors champ. Un plan de boss où le boss n'est
+pas là ne montre rien.
+
+## La correction
+
+Les plans de boss ont maintenant leur propre conduite, celle du robot qui gagne
+les combats dans la suite de vérification :
+
+- **aller au contact, puis s'arrêter à 44 px** — à portée de poing, pas au
+  contact. Le coup part *devant* Brad : collé au centre de sa cible, la zone
+  d'attaque la dépasse et il tape dans le vide en oscillant dessus ;
+- **frapper en cadence**, environ trois fois par seconde ;
+- **sauter quand la cible est au-dessus de lui** et seulement quand il est
+  presque dessous — ce qui lui permet de retomber sur la tête du Séraphin, qui
+  vole ;
+- pendant un bonneteau, **viser la copie qui EST le boss**. Le Séraphin se
+  duplique : sans ça, la bande-annonce le montrerait en train de frapper des
+  mirages.
+
+## Mesure
+
+Sur la durée entière de chaque plan :
+
+| boss | coups portés | PV retirés | durée | distance max |
+|---|---|---|---|---|
+| Serra-Colosse | 9 | 4 | 3,4 s | 111 px |
+| Serra-Séraphin | 11 | 3 | 3,4 s | 104 px |
+| Serra-Balistique | 5 | 1 | 2,6 s | 101 px |
+
+**Le boss ne quitte jamais le cadre** — 0 image sur les trois plans.
+
+## Ce que le test mesure, et pourquoi
+
+La première version du test exigeait que le boss **perde des points de vie**.
+Elle échouait sur le Serra-Balistique, et à raison : il a une **coque** qui ne
+cède qu'à un astéroïde. Le frapper ne lui retire rien tant qu'elle tient, et
+exiger une perte de PV en 2,6 s revenait à exiger qu'un astéroïde tombe dans
+l'intervalle — c'est-à-dire à tirer au sort.
+
+Le test compte donc les **coups encaissés** : le clignotement du boss se
+déclenche à chaque coup reçu, qu'il perde des PV ou non. Ce qu'on veut prouver,
+c'est que Brad *le frappe*, pas qu'il le tue en trois secondes.
+
+## Vérification
+
+**265 vérifications, 0 échec.** Quatre sont nouvelles :
+
+- les trois boss apparaissent, vivants ;
+- **le boss ne quitte jamais le cadre** ;
+- **Brad reste à portée au lieu de courir au mur** (moins de 150 px) ;
+- **et il les frappe vraiment**.
+
+---
+
+# Prototype 21 — le duel du Séraphin, et la manette
+
+## 1. Le monstre restait planté sur Brad
+
+Diagnostic avant correction, sur le plan du Serra-Séraphin :
+
+```
+s=0.33  bx=5325  vy=-232  sol=false   ox=5340   chevauche
+s=0.67  bx=5339  vx=0     sol=true    ox=5331   chevauche
+s=1.00  bx=5339  vx=0     sol=true    ox=5327   chevauche
+s=2.00  bx=5339  vx=0     sol=true    ox=5326   chevauche
+s=3.00  bx=5339  vx=0     sol=true    ox=5322   chevauche
+```
+
+Brad saute, retombe sur l'échafaudage, **et ne bouge plus d'un pixel pendant
+2,5 secondes** pendant que le Séraphin flotte à travers lui. **90 % des images
+du plan** avec les deux sprites l'un dans l'autre.
+
+**La cause :** la distance de maintien se mesurait **de centre à centre**. Le
+Séraphin fait 58 px de large ; « s'arrêter à 44 px de son centre » veut dire
+s'arrêter *dedans*. Et comme Brad est invincible pendant la bande-annonce, rien
+ne l'en repoussait.
+
+**La correction :** la portée se calcule à partir des demi-largeurs des deux
+corps, donc elle s'adapte à la taille du boss. **Le chevauchement est tombé de
+90 % à 0–7 %.**
+
+J'avais d'abord supposé que c'était l'invincibilité qui empêchait le recul de
+les séparer. **C'était faux** — la mesure l'a montré : une fois la portée
+calculée entre les bords, le chevauchement disparaît sans toucher à
+l'invincibilité. Je l'ai donc laissée, parce qu'elle protège la garantie
+« Brad ne tombe jamais » dans les plans de niveau.
+
+**Et un rythme de duel** par-dessus : Brad avance, frappe, se dégage, revient.
+Les trois chiffres du cycle sont mesurés, pas choisis — quatre réglages
+comparés sur les trois plans, en comptant les coups portés, le chevauchement et
+les images où Brad ne bouge pas :
+
+| réglage | niveau 3 | niveau 6 | niveau 9 |
+|---|---|---|---|
+| sans recul | 2 coups · 0 % collés | 0 · 7 % | 1 · 0 % |
+| 0,85 / 24 px | 3 · 0 % | 0 · 7 % | 4 · 0 % |
+| **0,75 / 36 px** | **5 · 0 %** | **1 · 7 %** | **3 · 0 %** |
+| 0,62 / 54 px | 2 · 0 % | 6 · 7 % | 2 · 0 % |
+
+Le recul ne change pas le chevauchement — il sert au mouvement, c'est-à-dire à
+empêcher l'image de se figer.
+
+### Pourquoi le test compte la somme des coups
+
+Sur le plan du Séraphin, Brad est **en l'air 92 % du temps** — il rebondit sur
+sa tête — et le boss est dans sa zone de coup **96 % du temps**. Ce qui varie,
+c'est si la copie touchée est la vraie : le Séraphin se duplique, et frapper
+une fausse copie ne lui fait rien. Exiger un coup enregistré sur *ce* boss-là
+reviendrait à exiger de tomber sur la bonne copie en trois secondes, donc à
+tirer au sort. Le test juge donc **la somme sur les trois boss**.
+
+## 2. La manette
+
+Tu voulais annoncer « écran tactile, clavier souris et manette physique » sur
+le carton final. **Le tactile et le clavier existaient, la manette non.**
+Je ne pouvais pas l'écrire sans que ce soit faux — je l'ai donc ajoutée.
+
+Elle ne duplique rien. Le corps du gestionnaire clavier est devenu une fonction
+nommée, `auClavier`, et la manette lui passe des événements de la même forme
+(`{ code, key }`). Elle hérite donc d'un coup de **toute** la navigation du
+jeu : menus, boutique, jukebox, pause, combat final, générique,
+bande-annonce — sans une ligne réécrite. Un écran ajouté plus tard sera jouable
+à la manette sans qu'on y pense.
+
+| manette | équivaut à | effet |
+|---|---|---|
+| stick gauche et croix | flèches | se déplacer, naviguer |
+| bouton du bas (A / ✕) | Espace | sauter, valider |
+| bouton de droite (B / ○) | Échap | retour, pause |
+| bouton de gauche (X / □) | X | frapper |
+| bouton du haut (Y / △) | C | onde de choc |
+| L1 / R1 | Maj | courir |
+| Start | Échap | pause |
+
+Détails qui comptent : un bouton **maintenu** n'envoie qu'un seul événement (sans
+ça le menu défilerait à soixante entrées par seconde) ; le stick a une zone
+morte de 0,45 ; et **débrancher la manette relâche tout**, sinon Brad
+continuerait de courir vers la droite pour toujours.
+
+## 3. Le carton final
+
+```
+              IMAGINe Studio  ×  HwR Engine
+        Écran tactile · Clavier et souris · Manette
+               Mobile  ·  PC  ·  Console *
+        * par le support des manettes, dans le navigateur
+```
+
+L'étoile dit exactement ce qu'elle vaut : le jeu n'est pas publié sur console,
+il se joue au navigateur avec une manette. Écrire « Consoles » tout court
+serait une promesse que le jeu ne tient pas.
+
+## Vérification
+
+**275 vérifications, 0 échec**, deux exécutions consécutives identiques. Dix
+sont nouvelles :
+
+- **le monstre ne reste pas planté sur lui** (moins de 30 % d'images collées) ;
+- **le duel ne se fige jamais** (moins de 45 % d'images immobiles) ;
+- le stick gauche fait marcher Brad ; le bouton du bas fait sauter ;
+- **un bouton maintenu ne se répète pas** ;
+- les boutons frappe, onde et course répondent ;
+- **débrancher la manette relâche tout** ;
+- la croix navigue dans le menu, le bouton du bas valide, celui de droite sert
+  d'Échap.
+
+---
+
+# Prototype 22 — le logo nu, et plus rien à l'écran
+
+## 1. La plaque et le filet du logo HwR sont retirés
+
+Vu sur matériel, écran d'ordinateur et téléphone : **le fichier porte déjà ses
+propres traits.** Les quatre marques de coupe dans les coins de
+`logo-hwr.png` — celles que je proposais de masquer — forment le cadre autour
+des lettres. Ma plaque arrondie et mon filet faisaient donc double emploi, et
+sur un grand écran les deux ensemble se lisaient mal.
+
+Le logo se dessine maintenant **nu**, sur le fond de la scène. `dessinerLogoHwr`
+tient en deux lignes.
+
+Le tracé de carré arrondi qui allait avec a été supprimé, pas laissé en place :
+du code mort est du code qu'on croit encore utile.
+
+**Le test a été retourné plutôt que supprimé.** Il vérifiait qu'une plaque se
+détachait du fond ; il vérifie maintenant l'inverse — que les lettres sont bien
+là, et que **rien n'est dessiné autour**. On lit un point à l'endroit exact où
+la plaque se trouvait : le fichier n'y pose aucun pixel, donc ce point doit
+avoir la couleur du fond à moins de 6 unités près.
+
+## 2. Plus d'indication « Échap » pendant la bande-annonce
+
+Elle se serait retrouvée dans l'enregistrement. Une bande-annonce qui affiche
+ses propres commandes n'est plus une bande-annonce. **La touche fonctionne
+toujours — elle ne s'annonce plus.**
+
+## Vérification
+
+**275 vérifications, 0 échec.**
+
+---
+
+# Prototype 23 — la manette, le contrat, et ce que je n'ai pas su reproduire
+
+Quatorze demandes. Onze sont faites et mesurées. Deux portaient sur des bugs
+que **je n'ai pas réussi à reproduire** — c'est dit en clair plus bas, avec ce
+que j'ai fait à la place. Une dernière, les musiques, sort du code.
+
+## Avertissement : la suite de tests est passée de 275 à 60 vérifications
+
+Ce n'est pas une régression, mais il faut le dire avant le reste.
+
+Le conteneur qui hébergeait l'ancienne suite a été recyclé, et **elle n'était
+pas dans le zip** : elle vivait à côté du jeu, pas dedans. Elle est perdue.
+
+La nouvelle suite est écrite dans `tools/`, **donc elle part avec le jeu**.
+Elle compte 60 vérifications au lieu de 275 : elle couvre ce prototype et les
+points de rupture connus, pas encore les 215 assertions de détail accumulées
+depuis le début. Elle rattrapera, prototype après prototype. En attendant,
+**60 vérifications sur du neuf valent mieux qu'un chiffre que je ne peux plus
+produire**, et je préfère l'écrire que laisser croire à une couverture que je
+n'ai pas.
+
+```
+tools/socle.mjs   serveur local + navigateur + compteur
+tools/verif.mjs   les 60 vérifications, sections A à J
+```
+
+Lancement : `node tools/verif.mjs` (il faut Playwright).
+
+## 1. Pourquoi Lille
+
+La phrase disait que Brad y avait grandi. Elle dit maintenant :
+
+> PARCE QUE C'EST LÀ QU'IL A ÉTÉ DÉTECTÉ POUR LA DERNIÈRE FOIS DANS LE MONDE
+> RÉEL.
+
+Le test vérifie les deux moitiés : que l'ancienne phrase a disparu **et** que
+la nouvelle raison est donnée. Vérifier seulement la disparition laisserait
+passer un dialogue vide.
+
+## 2. La manette
+
+C'est le morceau sensible du lot, et il est traité comme tel : **dix-sept
+vérifications sur les soixante**.
+
+| geste | PlayStation | Switch | Xbox | clavier |
+|---|---|---|---|---|
+| se diriger | stick gauche | stick gauche | stick gauche | flèches |
+| accélérer | R2 | ZR | RT | Maj |
+| lancer un objet | ✕ | B | A | X |
+| Brad-Shy | □ | Y | X | C |
+| pause | △ | X | Y | Échap |
+| valider un menu | ✕ | B | A | Espace |
+| revenir en arrière | ○ | A | B | Échap |
+| sauter | ○ ou stick haut | A ou stick haut | B ou stick haut | ↑ |
+
+Deux ajouts que tu n'avais pas demandés, et pourquoi. **Le saut** : il n'était
+pas dans la liste, mais un jeu de plateforme sans saut sous le pouce ne se joue
+pas. Il est sur le haut du stick et de la croix — comme la flèche haut au
+clavier — et doublé sur le bouton de droite. **Start / Options** ouvre aussi la
+pause, en plus du bouton du haut. Et les quatre gâchettes font courir, pas
+seulement celle de droite : tenir L2 par réflexe ne devait pas ne rien faire.
+
+**Une nuance qu'il faut connaître.** L'API navigateur ne donne pas le *nom* des
+boutons, elle donne leur **position** : l'index 0 est toujours le bouton du
+bas. Sur PlayStation et Xbox, le bouton du bas est bien celui qui valide
+(✕ et A). Sur une manette Switch, le bouton du bas est **B**, pas A — Nintendo
+place ses lettres à l'inverse. Le jeu suit donc la position, pas la lettre :
+**valider, c'est toujours le bouton du bas**, quel qu'il porte comme nom. C'est
+le seul choix qui reste cohérent d'une manette à l'autre.
+
+### Trois tables, pas une
+
+Le même bouton ne veut pas dire la même chose au menu, en jeu et au combat
+final. Il y a donc `MANETTE_JEU`, `MANETTE_FINAL` et `MANETTE_MENU`, et
+`tableManette()` choisit d'après la scène.
+
+**Le piège, trouvé en le mesurant :** la table est choisie au moment de
+l'appui, mais le relâchement arrivait plus tard — parfois après un changement
+de scène — et allait chercher la table de la *nouvelle* scène. La touche
+restait enfoncée pour toujours. Le relâchement efface maintenant l'action dans
+`entrees` **et** dans `entreesFinal`, sans passer par la table.
+
+Deux tests gardent ça : « changer de scène ne laisse aucune touche collée » et
+« débrancher la manette relâche tout ».
+
+### L'écran Contrôles ne peut pas mentir
+
+Il est dans les options. Sa légende n'est pas écrite à la main : elle est
+**construite à partir de la table qui pilote réellement la manette**
+(`MANETTE_LEGENDE`, dans `js/entrees.js`). Si le mappage change un jour et que
+l'écran n'est pas mis à jour, ce n'est pas possible — il n'y a qu'une source.
+
+## 3. Conditions d'utilisation, confidentialité, contact
+
+Nouveau fichier : `js/mentions.js`.
+
+**Au premier lancement**, et seulement au premier, un bandeau s'affiche sur
+l'écran d'accueil, sous le bouton « Jouer » :
+
+> En cliquant sur « Jouer », vous acceptez avoir lu les **conditions
+> d'utilisation de ce jeu** et ce qu'il advient de **vos données**.
+
+La phrase demandée disait « en cliquant sur *continuer* ». Il n'y a pas de
+bouton « continuer » sur cet écran — il y a « Jouer ». Écrire le nom d'un
+bouton qui n'existe pas dans une phrase d'acceptation aurait été bancal
+juridiquement autant que visuellement ; le reste de la phrase est repris tel
+quel. Si tu préfères vraiment « continuer », il faut renommer le bouton, et je
+le fais.
+
+Les deux passages en bleu sont cliquables et mènent à l'écran complet. Après
+ça, le bandeau ne revient plus : la clef `bradbitt.mentions.v1` vit **à part de
+la sauvegarde**, pour qu'effacer sa partie ne fasse pas réapparaître un texte
+juridique déjà lu.
+
+Le même texte est lisible à tout moment dans les options, à l'entrée
+**« Conditions et confidentialité… »**.
+
+**Le texte est adapté du site, pas recopié.** Celui du site annonce des polices
+et des vignettes chargées chez des tiers ; le jeu n'en charge aucune, et il
+écrit d'autres choses dans le navigateur. Recopier le texte du site ici aurait
+été **faux** — c'est exactement le genre de demi-vérité qu'un contrat
+d'utilisation ne doit pas contenir.
+
+### Le courriel de contact
+
+`imaginestudio.hwr@gmail.com`, dans les options. Cliquer ouvre un brouillon
+**déjà rempli** :
+
+```
+--- à garder, ça aide à comprendre ---
+Version du jeu : 0.23 (septembre 2026)
+Appareil : ordinateur          (ou téléphone, ou tablette)
+Navigateur : Chrome 140
+Écran : 1512 × 982
+Manette : non détectée         (ou « oui »)
+Niveaux terminés : 7 / 11
+Difficulté : connaisseur
+Incidents rencontrés : 0
+```
+
+Rien n'est envoyé nulle part : ces lignes sont écrites **dans le brouillon**,
+que le joueur lit, corrige et envoie — ou pas.
+
+Ce n'est pas de la décoration. Personne ne sait dire de tête quelle version il
+joue, et « ça bugue » sans appareil ni navigateur n'est pas un rapport de bug.
+
+## 4. Le combat final était trop court
+
+Mesuré avant de toucher à quoi que ce soit : **32,7 s en moyenne**. La demande
+était « max 1 min ».
+
+Deux réglages, pas dix :
+
+| | avant | après |
+|---|---|---|
+| points de vie de Kirby 67 | 3 | 4 |
+| sbires par décharge | 6 | 7 |
+
+Mesure après, sur six combats gagnés menés par le robot :
+
+```
+44 s · 54 s · 49 s · 43 s · 43 s · 42 s     moyenne 45,8 s
+```
+
+Puis six autres, à la seconde exécution de la suite :
+
+```
+45 s · 42 s · 46 s · 46 s · 47 s · 45 s     moyenne 45,2 s
+```
+
+Douze combats, douze victoires, **aucun au-dessus de 54 s**. Le test exige
+entre 40 et 60 s.
+
+**Le quatrième point de vie a demandé une correction.** L'annonce de phase se
+déclenchait à chaque coup encaissé ; au quatrième, elle réannonçait la phase
+déjà en cours (« IL S'ACHARNE » deux fois). `k.phase` est maintenant plafonné.
+
+## 5. Les deux bugs que je n'ai pas reproduits
+
+Il faut le dire franchement.
+
+### « Brad peut être bloqué au mini-boss 6 s'il est sur un échafaudage en même temps qu'il se fait toucher »
+
+J'ai balayé **34 positions** sur l'échafaudage du mini-boss 6, avec un coup
+reçu depuis la gauche puis depuis la droite à chacune. **Aucun blocage.**
+
+### « En plein combat, le jeu peut ne plus marcher — après que Brad perde une vie et que le combat reprenne » (boss final 2)
+
+J'ai joué **dix combats complets de 60 s**, plus un cycle complet
+mort → réapparition → reprise. **Aucun figement.**
+
+### Ce que j'ai fait à la place
+
+Ne pas reproduire un bug ne veut pas dire qu'il n'existe pas — ça veut dire que
+je ne sais pas encore le provoquer. Trois choses, donc :
+
+**a) La boucle de jeu ne peut plus mourir.** C'était la cause la plus probable :
+une exception levée pendant une image arrête `requestAnimationFrame`, et
+l'écran se fige exactement comme décrit. Elle est maintenant attrapée.
+
+```js
+function boucle(maintenant) {
+  try { imageDuJeu(maintenant); } catch (e) { noterIncident(e); }
+  if (incidents.t > 0) { try { dessinerIncident(); } catch (_) {} }
+  requestAnimationFrame(boucle);
+}
+```
+
+Le jeu continue, et **affiche** qu'un incident s'est produit. Un test lève une
+exception en pleine image et vérifie que la boucle tourne toujours l'image
+suivante.
+
+**b) Un filet anti-blocage.** Si le joueur demande à bouger, que Brad est libre
+de bouger, et qu'il ne bouge pas pendant **40 images consécutives** (un tiers de
+seconde), il est dégagé de deux pixels vers le haut et trois dans le sens
+demandé. Deux tests : qu'il **ne se déclenche pas** en jeu normal, et qu'il
+dégage bien Brad s'il est vraiment coincé.
+
+Le premier test m'a d'ailleurs pris au piège : sa phase de « jeu normal »
+lançait Brad dans le premier trou du niveau 1, la scène passait à `mort`, et le
+filet — qui ne s'applique qu'en scène `jeu` — ne mesurait plus rien du tout. Un
+test qui ne mesure rien passe toujours.
+
+**c) Un compteur d'incidents**, reporté dans le courriel de contact. Si le bug
+existe et se reproduit chez toi, la ligne « Incidents rencontrés » ne sera pas
+à zéro, et le message d'erreur exact remontera.
+
+**Je ne peux pas confirmer que ces deux bugs sont corrigés.** Je peux confirmer
+que le *symptôme* décrit — écran figé, Brad qui ne répond plus — a maintenant
+deux filets sous lui, et qu'une trace sera gardée s'il revient.
+
+## 6. Le numéro de version
+
+En bas à droite du menu principal, `v0.23`. Une seule source :
+`VERSION_JEU` dans `js/mentions.js`, la même que celle du courriel de contact et
+celle de l'écran des conditions.
+
+## 7. Le costume d'or
+
+**Le défaut, mesuré.** L'ancienne teinte appliquait *une seule* couleur dorée
+multipliée par la luminance du pixel, écrêtée à 0,45. Résultat : la couleur la
+plus fréquente de la planche était `(88, 68, 18)` — un brun-vert. « Trop
+dépassé au niveau des couleurs » est exactement ça.
+
+**La correction.** Une rampe à deux couleurs, de l'ombre `(86, 58, 12)` à la
+lumière `(240, 206, 108)`, avec la cravate en `(104, 20, 30)`.
+
+Premier essai raté : la rampe débordait sur les cheveux et le contour. La
+teinte est maintenant restreinte aux **lignes 22 et suivantes** de chaque
+cellule de 48 pixels — c'est-à-dire au costume, pas au visage.
+
+## 8. Le skin 3IRL
+
+Code **`FNAM3RL`**, à saisir dans le vestiaire. Il est actif en permanence, sans
+condition de progression. La casse n'a pas d'importance.
+
+> La légende raconte que pour l'éloigner, il faut utiliser une boîte vocale.
+> Mais bon, une légende en cache souvent une autre.
+
+Le sprite est généré par `tools/robot_brad.py` à partir de bandes **mesurées sur
+la planche**, pas devinées : cheveux `0-8`, visage `8-23`, torse `23-36`, yeux
+`14-18` × colonnes `15-25`, marques d'articulation lignes `25-31`, bras
+`5-9` et `26-30`.
+
+Les deux premiers essais ont échoué et méritent d'être notés : le masque des
+yeux attrapait tout le contour du visage (traînées cyan), et les marques
+d'articulation faisaient sept colonnes de large (barres blanches). C'est en
+imprimant une carte ASCII de la planche pixel par pixel que la bonne géométrie
+est sortie.
+
+Le code est enregistré dans `partie.codesUniformes` : il survit à un
+rechargement, et un test le vérifie.
+
+## 9. Le jukebox
+
+En bas à gauche de l'écran du jukebox : **Musiques par lılYº**. Seul le nom est
+cliquable — il s'éclaircit au survol — et ouvre
+`https://soundcloud.com/l-ly-39181851` dans un nouvel onglet.
+
+## 10. Les bonus BC secrets, au complet
+
+La liste « à venir » est maintenant **vide**, et elle le reste : plus rien n'est
+promis sans être livré.
+
+| aptitude | coût | ce qu'elle fait |
+|---|---|---|
+| Double saut | 1 BC secret | un second saut en plein vol |
+| Frappe chargée | 1 | tenir le coup 0,5 s : portée ×1,9, dégâts ×2 |
+| Plaquage | 2 | frapper en pleine course : charge sur 3 m |
+| Tourelle anti-serrano | 2 | une tourelle suit Brad et tire seule |
+
+Huit vérifications, dont deux nées de bugs réels :
+
+- **La tourelle tuait tout d'un coup.** Son projectile était marqué `aBrad`,
+  et dans `majBoules` une boule `aBrad` inflige 999 dégâts — c'est la règle de
+  la boule *renvoyée*. Elle a maintenant ses propres dégâts.
+- **La frappe chargée partait 0,27 s trop tard** après une réapparition.
+  `brad.recharge` n'était pas remis à zéro — et 0,27 s, c'est exactement
+  `R.recharge`. `reapparaitre()` remet maintenant à plat les quatre états
+  d'attaque, le plaquage et la tourelle.
+
+## 11. Les musiques, en deux archives
+
+Hors du code, mais demandé.
+
+Les 21 morceaux ont été **réencodés en AAC 96 kbit/s** (ils étaient à 128).
+
+| | avant | après |
+|---|---|---|
+| poids total | 58 Mio | 44 Mio |
+| coupure du spectre | 17,5 – 17,9 kHz | 16,6 kHz |
+| durées | — | inchangées (écart max 0,04 s) |
+
+**23 % de moins** à télécharger pour le joueur. Ce que ça coûte : une deuxième
+génération de compression, mesurable tout en haut du spectre — là où il n'y a
+quasiment plus d'énergie musicale. **Les originaux ne sont pas touchés.**
+
+Deux archives, parce que 44 Mio ne passe pas en un seul envoi :
+
+```
+bradbitt-musiques-1-sur-2-niveaux.zip      11 morceaux   20,5 Mio
+bradbitt-musiques-2-sur-2-boss-menus.zip   10 morceaux   24,0 Mio
+```
+
+Chacune porte déjà l'arborescence `assets/audio/`, et un `LISEZ-MOI.txt` qui
+explique les deux façons de les déposer sur GitHub.
+
+**Un point de fait, pour éviter un malentendu :** la limite des 25 Mo de GitHub
+porte sur *chaque fichier déposé dans le dépôt*, pas sur l'archive. Le plus gros
+morceau fait 5,9 Mo — aucun n'a jamais approché cette limite. La coupure en deux
+vient de la limite d'envoi de cette conversation, 30 Mio.
+
+**Trois musiques manquent toujours** et le jeu les attend :
+`mini-kirby.m4a`, `mega-kirby.m4a`, `generique.m4a`. Sans elles, les mini-boss,
+le combat final et le générique se jouent en silence — sans planter.
+
+## Vérification
+
+**60 vérifications, 0 échec**, deux exécutions consécutives identiques.
+
+```
+A. CHARGEMENT ................................  5
+B. LA BOUCLE NE MEURT PAS ....................  2
+C. LA MANETTE ................................ 17
+D. MENTIONS ET CONTACT ....................... 11
+E. LE SKIN 3IRL ..............................  5
+F. LES APTITUDES SECRETES ....................  8
+G. LE COMBAT FINAL ...........................  4
+H. LE FILET ANTI-BLOCAGE .....................  2
+I. LE DIALOGUE ...............................  2
+J. RENDU .....................................  4
+```
+
+Et `node tools/verifier_niveaux.js` : **12 niveaux, aucun défaut de géométrie**,
+chacun analysé avec sa propre gravité.

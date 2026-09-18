@@ -209,6 +209,28 @@ function dessinerJukebox() {
     ? 'Flèches choisir  ·  Entrée écouter  ·  ← → onglet  ·  Échap sortir'
     : 'Tape le code au clavier ou touche les lettres  ·  Entrée valider  ·  Échap sortir',
     56, HAUTEUR - 33);
+
+  /* Le credit de la compositrice, cliquable. Les musiques sont a elle : son nom
+     doit etre la ou on les ecoute, pas seulement dans le generique. */
+  const survolC = souris.survol && souris.survol.action === 'credit-lily';
+  ctx.font = '9px system-ui, sans-serif';
+  const t1 = 'Musiques par ', t2 = 'lılYº';
+  const w1 = ctx.measureText(t1).width;
+  ctx.fillStyle = 'rgba(255,255,255,.34)';
+  ctx.fillText(t1, 56, HAUTEUR - 19);
+  ctx.fillStyle = survolC ? '#a8d4ff' : '#6fb4ff';
+  ctx.fillText(t2, 56 + w1, HAUTEUR - 19);
+  const w2 = ctx.measureText(t2).width;
+  ctx.fillRect(56 + w1, HAUTEUR - 17, w2, 1);
+  zone(56 + w1 - 3, HAUTEUR - 29, w2 + 6, 14, 'credit-lily');
+}
+
+const SOUNDCLOUD_LILY = 'https://soundcloud.com/l-ly-39181851';
+
+function ouvrirSoundcloudLily() {
+  audio.bruit('valider');
+  try { window.open(SOUNDCLOUD_LILY, '_blank', 'noopener'); }
+  catch (e) { location.href = SOUNDCLOUD_LILY; }
 }
 
 function dessinerListePistes() {

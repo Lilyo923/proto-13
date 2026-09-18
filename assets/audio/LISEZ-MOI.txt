@@ -1,0 +1,13 @@
+LES MUSIQUES NE SONT PAS DANS CETTE ARCHIVE.
+
+Elles pesent 44 Mio a elles seules et sont livrees a part, dans deux archives :
+
+  bradbitt-musiques-1-sur-2-niveaux.zip
+  bradbitt-musiques-2-sur-2-boss-menus.zip
+
+Si elles sont deja en ligne sur ton depot, il n'y a rien a faire : ce zip-ci ne
+contient aucun fichier .m4a, donc il ne peut rien ecraser.
+
+Trois musiques n'ont jamais ete fournies et le jeu les attend toujours :
+mini-kirby.m4a, mega-kirby.m4a, generique.m4a. Sans elles, les mini-boss, le
+combat final et le generique se jouent en silence, sans planter.

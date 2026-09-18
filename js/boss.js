@@ -1989,6 +1989,7 @@ function dessinerBlindage(cx, bas, e) {
 /* Barre de vie du boss et bandeaux, dessines par-dessus tout, en repere
    ecran. */
 function hudArene() {
+  if (CINEMA) return;
   if (!ARENE) return;
   const b = arene.boss;
 

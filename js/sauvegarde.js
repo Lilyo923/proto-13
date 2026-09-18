@@ -103,6 +103,11 @@ const UNIFORMES = [
      recompense maintenant la vraie fin du jeu. */
   { cle: 'dore', nom: 'Le costume d\'or', condition: 'final>=1',
     detail: 'Débloqué en battant Kirby 67 pour de bon. Bon courage.' },
+  /* Le skin 3IRL. Il ne s'obtient pas en jouant : il s'obtient en SACHANT.
+     Le code se tape directement dans le vestiaire, et il n'expire jamais. */
+  { cle: '3irl', nom: 'Brad 3IRL', condition: 'code:FNAM3RL',
+    detail: 'La légende raconte que pour l\'éloigner, il faut utiliser une boîte '
+          + 'vocale. Mais bon, une légende en cache souvent une autre.' },
 ];
 
 /* -----------------------------------------------------------------------------
@@ -180,6 +185,7 @@ const partie = {
   finalGagne: false,            // le combat final est gagne — le jeu est fini
   piste: 'menu',                // morceau choisi au jukebox
   codes: [],                    // codes du jukebox deja entres
+  codesUniformes: [],           // codes du vestiaire deja entres
   objets: [],                   // pieces de l'appareil a raclette recuperees
   bossVaincus: [],              // ids des niveaux dont le boss est tombe
   piecesSecretes: 0,            // Brad Coins secrets en poche
@@ -214,19 +220,43 @@ const partie = {
 
 const CHANCE_BC_SECRET = 0.0167;      // par elimination, sans accumulation
 
+/* LES QUATRE APTITUDES SECRETES.
+
+   Trois d'entre elles etaient annoncees dans la boutique sans etre achetables.
+   Elles le sont maintenant, et aucune n'a demande un bouton de plus : un
+   platformer qui reclame une sixieme touche a perdu la partie.
+
+     frappe chargee  -> on TIENT le bouton de coup
+     plaquage        -> on frappe EN COURANT a pleine vitesse
+     tourelle        -> elle se debrouille seule
+
+   Les couts montent : la premiere aptitude s'achete vite, la derniere se
+   merite. */
 const SECRETS = [
   {
     cle: 'double-saut', nom: 'Double saut', cout: 1,
     detail: 'Un second saut en plein vol.',
     phrase: 'Deux sauts. J\'ai longtemps pense que c\'était physiquement discutable. Ça l\'est.',
   },
+  {
+    cle: 'frappe-chargee', nom: 'Frappe chargée', cout: 1,
+    detail: 'Maintiens le coup une demi-seconde : il porte plus loin et fait le double.',
+    phrase: 'Tu tiens, ça brille, tu lâches. Le Serra n\'a pas le temps de comprendre.',
+  },
+  {
+    cle: 'plaquage', nom: 'Plaquage', cout: 2,
+    detail: 'Frappe en pleine course : Brad charge et renverse tout sur trois mètres.',
+    phrase: 'Ce n\'est pas élégant. C\'est efficace. Ce sont deux choses différentes.',
+  },
+  {
+    cle: 'tourelle', nom: 'Tourelle anti-serrano', cout: 2,
+    detail: 'Une tourelle te suit et tire toute seule sur ce qui approche.',
+    phrase: 'Elle ne parle pas, elle ne se plaint pas, elle vise mieux que toi. Ne le prends pas mal.',
+  },
 ];
 
-/* Les trois autres aptitudes de la roadmap — frappe chargee, plaquage,
-   tourelle anti-serrano — viendront ensuite. Elles sont annoncees dans la
-   boutique mais pas achetables : promettre un bouton qui ne fait rien serait
-   pire que ne rien promettre. */
-const SECRETS_A_VENIR = ['Frappe chargée', 'Plaquage', 'Tourelle anti-serrano'];
+// Plus rien n'est promis sans etre livre : la liste est vide, et elle le reste.
+const SECRETS_A_VENIR = [];
 
 function aSecret(cle) { return partie.secrets.indexOf(cle) >= 0; }
 
@@ -290,6 +320,10 @@ function chargerPartie() {
     if (typeof brut.piste === 'string' && PISTES_JUKEBOX.some(p => p.cle === brut.piste)) {
       partie.piste = brut.piste;
     }
+    if (Array.isArray(brut.codesUniformes)) {
+      partie.codesUniformes = brut.codesUniformes
+        .filter(c => CODES_UNIFORME.some(p => p.code === c));
+    }
     if (Array.isArray(brut.codes)) {
       partie.codes = brut.codes.filter(c => CODES_JUKEBOX.some(p => p.code === c));
     }
@@ -339,6 +373,7 @@ function effacerPartie() {
   partie.bossVaincus = [];
   partie.piste = 'menu';
   partie.codes = [];
+  partie.codesUniformes = [];
   partie.piecesSecretes = 0;
   partie.secretsVus = false;
   partie.secrets = [];
@@ -382,8 +417,34 @@ function prochainNiveau() {
   return ORDRE_NIVEAUX.find(id => !niveauTermine(id)) || ORDRE_NIVEAUX[ORDRE_NIVEAUX.length - 1];
 }
 
+/* Les codes du vestiaire. Ils viennent des autres projets du studio, ils ne se
+   devinent pas, et ils sont VALABLES POUR TOUJOURS — pas d'evenement, pas de
+   date limite. */
+const CODES_UNIFORME = [
+  { code: 'FNAM3RL', cle: '3irl' },
+];
+
+function codeUniformeConnu(code) {
+  return CODES_UNIFORME.find(c => c.code === String(code || '').toUpperCase()) || null;
+}
+
+function entrerCodeUniforme(code) {
+  const c = codeUniformeConnu(code);
+  if (!c) return null;
+  if (partie.codesUniformes.indexOf(c.code) < 0) {
+    partie.codesUniformes.push(c.code);
+    enregistrerPartie();
+    return c;                       // nouveau
+  }
+  return c;                         // deja connu, on le redit sans rien casser
+}
+
 function uniformeDebloque(u) {
   if (!u.condition) return true;
+  // Un uniforme a code n'a pas de seuil : il est ouvert ou il ne l'est pas.
+  if (u.condition.indexOf('code:') === 0) {
+    return partie.codesUniformes.indexOf(u.condition.slice(5)) >= 0;
+  }
   const m = /^(\w+)>=(\d+)$/.exec(u.condition);
   if (!m) return false;
   const seuil = Number(m[2]);

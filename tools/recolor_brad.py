@@ -21,6 +21,10 @@ import os
 import numpy as np
 from PIL import Image
 
+# Geometrie de la planche : 4 colonnes x 3 lignes de cellules de 36 x 48.
+HAUTEUR_CELLULE = 48
+Y_DEBUT_COSTUME = 22      # au-dessus, c'est la tete : on n'y touche pas
+
 # nom -> (couleur de cravate, couleur de costume ou None pour garder)
 UNIFORMES = {
     "classique-bleu":   ((44, 108, 216), None),
@@ -30,7 +34,22 @@ UNIFORMES = {
     "cravate-jaune":    ((232, 190, 42), None),
     "classique-turquoise": ((32, 190, 186), None),
     "classique-bordeaux":  ((136, 22, 42), None),
-    "dore":             ((250, 238, 190), (196, 152, 42)),
+    # Le costume d'or n'est PAS une couleur, c'est une rampe.
+    #
+    # Premiere version : une seule couleur (196,152,42) multipliee par la
+    # luminance du pixel d'origine, bornee a 0,45. Les pixels de costume les
+    # plus sombres tombaient donc a (88,68,18) — un brun boueux — et c'etait la
+    # teinte LA PLUS FREQUENTE de la planche : 2 657 pixels sur l'ensemble. Le
+    # costume ne ressemblait pas a de l'or, il ressemblait a de la terre.
+    #
+    # Un metal se rend par un ECART, pas par une teinte : ombre profonde et
+    # chaude, lumiere franche et pale. On donne donc deux bornes et on
+    # interpole entre les deux.
+    #
+    # La cravate passait a (250,238,190), une creme presque blanche : sur un
+    # costume clair elle disparaissait, et le personnage n'avait plus de point
+    # de contraste. Elle devient un bordeaux profond, qui tient face a l'or.
+    "dore":             ((104, 20, 30), ((86, 58, 12), (240, 206, 108))),
 }
 
 
@@ -69,10 +88,31 @@ def recolorer(arr: np.ndarray, cravate, costume):
     if costume is not None:
         lum = (r + g + b) / 3
         suit = visible & (lum >= 16) & (lum <= 62) & ~tie
+        # Le masque « sombre » attrape les pixels sombres PARTOUT, y compris
+        # le contour des cheveux et le trait qui cerne la tete. Tant que le
+        # costume etait brun, ça ne se voyait pas : les deux se confondaient.
+        # Des que l'or est devenu lumineux, la couleur a debordé sur la coiffure
+        # et sur toute la silhouette — « trop dépassé au niveau des couleurs ».
+        #
+        # On borne donc la zone au CORPS. La planche fait 4 colonnes x 3 lignes
+        # de cellules de 36 x 48 ; dans une cellule, la tete occupe les vingt
+        # premieres rangees et le costume commence a la vingt-deuxieme.
+        lignes = np.arange(arr.shape[0])[:, None] % HAUTEUR_CELLULE
+        suit = suit & (lignes >= Y_DEBUT_COSTUME)
         if suit.any():
-            v = (lum[suit] / 62).clip(0.45, 1.0)
-            for c in range(3):
-                out[..., c][suit] = (costume[c] * v).astype(np.uint8)
+            # `costume` est soit une couleur unique (on garde l'ancien procede,
+            # une multiplication), soit un COUPLE (ombre, lumiere) entre
+            # lesquels on interpole. Le couple donne un metal ; la couleur
+            # unique donnait de la boue.
+            if isinstance(costume[0], (tuple, list)):
+                sombre, clair = costume
+                t = ((lum[suit] - 16) / (62 - 16)).clip(0.0, 1.0)
+                for c in range(3):
+                    out[..., c][suit] = (sombre[c] + (clair[c] - sombre[c]) * t).astype(np.uint8)
+            else:
+                v = (lum[suit] / 62).clip(0.45, 1.0)
+                for c in range(3):
+                    out[..., c][suit] = (costume[c] * v).astype(np.uint8)
 
     return out
 

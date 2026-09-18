@@ -35,6 +35,9 @@ function lancerDemarrage() {
   // maintenant lancerait la partie derriere un voile.
   if (typeof enPortrait === 'function' && enPortrait()) return;
   demarrage.lance = true;
+  // Cliquer « Jouer » vaut acceptation : le bandeau l'annonce, et il ne
+  // reapparaitra plus.
+  marquerMentionsLues();
   audio.debloquer();               // le geste utilisateur autorise enfin le son
   audio.bruit('valider');
   scene = 'logos';
@@ -383,6 +386,7 @@ function zoneSousSouris() {
 const MENU_PRINCIPAL = [
   { cle: 'nouvelle',  nom: 'Nouvelle partie' },
   { cle: 'continuer', nom: 'Continuer' },
+  { cle: 'bande',     nom: 'Bande-annonce' },
   { cle: 'options',   nom: 'Options' },
   { cle: 'credits',   nom: 'Crédits' },
 ];
@@ -393,6 +397,9 @@ const MENU_OPTIONS = [
   { cle: 'difficulte', nom: 'Difficulté',           genre: 'choix' },
   { cle: 'retablir',   nom: 'Rétablir les réglages par défaut' },
   { cle: 'effacer',    nom: 'Effacer la sauvegarde' },
+  { cle: 'controles',  nom: 'Contrôles…' },
+  { cle: 'politique',  nom: 'Conditions et confidentialité…' },
+  { cle: 'contact',    nom: 'Signaler un bug · nous écrire' },
   { cle: 'avances',    nom: 'Réglages de développement…' },
   { cle: 'retour',     nom: 'Retour' },
 ];
@@ -498,6 +505,9 @@ function menuValider() {
       noter('Réglages rétablis.');
       audio.bruit('valider');
     } else if (e.cle === 'avances') { basculerPanneau(); audio.bruit('valider'); }
+    else if (e.cle === 'controles') ouvrirControles();
+    else if (e.cle === 'politique') ouvrirMentions('options');
+    else if (e.cle === 'contact') ecrireAuStudio();
     else menuAjuster(1);
     return;
   }
@@ -525,7 +535,8 @@ function menuValider() {
     // donne l'impression d'un saut, et le joueur arrive sans se situer.
     if (partie.termines.length === 0) lancerChargement(() => preparerNiveau('intro'));
     else lancerChargement(() => entrerHub(hub.premiereVisite));
-  } else if (e.cle === 'options') { scene = 'options'; indexOptions = 0; retourOptions = 'menu'; }
+  } else if (e.cle === 'bande') { lancerBandeAnnonce(); }
+  else if (e.cle === 'options') { scene = 'options'; indexOptions = 0; retourOptions = 'menu'; }
   else if (e.cle === 'credits') scene = 'credits';
 }
 
@@ -620,6 +631,48 @@ function dessinerAccueil() {
 
   texteCentre('Clique pour activer le son et charger le jeu',
               y + 68, '11px system-ui, sans-serif', 'rgba(255,255,255,.42)');
+
+  // Le bandeau juridique, une seule fois dans la vie du navigateur.
+  dessinerBandeauMentions();
+}
+
+/* -----------------------------------------------------------------------------
+   LE LOGO HwR ET SON CARRE
+
+   Le carre disparaissait. La cause n'etait pas dans le dessin : le fichier
+   `assets/ui/logo-hwr.png` ne contient QUE les lettres blanches, sur du
+   transparent — il n'y a aucun carre dedans. Sur le fond sombre de l'intro, il
+   n'y avait donc rien a voir, et rien a corriger dans le code qui l'affichait.
+
+   On dessine donc la plaque ici, sous les lettres. Deux details qui comptent :
+
+   - l'encre du fichier occupe 99 % de sa surface, bord a bord. Poser la plaque
+     a la meme taille collerait les lettres au bord ; elles sont donc reduites a
+     `ENCRE` de la plaque, ce qui redonne la marge d'un badge.
+   - le bleu nuit demande (#12141f) est presque celui du fond de l'intro
+     (#0a0c14). Une plaque de cette couleur exacte serait invisible, ce qui
+     ramenerait le probleme de depart. Elle est donc legerement relevee et
+     bordee d'un filet clair : c'est la meme couleur a l'oeil, mais elle se
+     detache.
+-------------------------------------------------------------------------- */
+
+/* LE LOGO HwR SE DESSINE NU.
+
+   Il a eu droit a une plaque arrondie et a un filet, parce que le carre du
+   logo semblait manquer a l'ecran. Verdict apres essai sur les deux supports :
+   le fichier porte deja ses propres traits — quatre marques de coupe dans les
+   coins — et le cadre ajoute faisait double emploi. Sur un grand ecran, les
+   deux ensemble se lisaient mal.
+
+   On garde donc le logo tel qu'il est, sur le fond de la scene. La plaque, le
+   filet et le trace de carre arrondi qui allait avec ont ete retires plutot
+   que laisses en place : du code mort est du code qu'on croit encore utile.
+
+   Une seule fonction, appelee par l'intro, la page des credits et la
+   bande-annonce. */
+function dessinerLogoHwr(cx, cy, cote) {
+  if (!logos.hwr) return;
+  ctx.drawImage(logos.hwr, cx - cote / 2, cy - cote / 2, cote, cote);
 }
 
 function dessinerEcranLogos() {
@@ -630,7 +683,7 @@ function dessinerEcranLogos() {
   // Chaque logo apparait, tient, puis s'efface.
   const paliers = [
     { img: logos.imagine, debut: 0.15,           largeur: 300 },
-    { img: logos.hwr,     debut: DUREE_LOGO + 0.15, largeur: 128 },
+    { img: logos.hwr,     debut: DUREE_LOGO + 0.15, largeur: 128, carre: true },
   ];
 
   for (const p of paliers) {
@@ -651,7 +704,10 @@ function dessinerEcranLogos() {
     const echelle = 1 + 0.02 * Math.min(1, local / DUREE_LOGO);
     ctx.translate(LARGEUR / 2, HAUTEUR / 2 - 14);
     ctx.scale(echelle, echelle);
-    ctx.drawImage(p.img, -w / 2, -h / 2, w, h);
+    // HwR est un badge carre : il lui faut sa plaque, que le fichier ne
+    // contient pas. Voir dessinerLogoHwr ci-dessus.
+    if (p.carre) dessinerLogoHwr(0, 0, w);
+    else ctx.drawImage(p.img, -w / 2, -h / 2, w, h);
     ctx.restore();
   }
 
@@ -724,6 +780,13 @@ function dessinerMenu() {
               HAUTEUR - 10, '10px system-ui, sans-serif', 'rgba(255,255,255,.3)');
 
   avertissementAudio();
+  // Le numero de version, en bas a droite : c'est ce qu'on demande a un joueur
+  // qui signale un bug, et personne ne le connait de tete.
+  ctx.textAlign = 'right';
+  ctx.font = '9px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = 'rgba(255,255,255,.26)';
+  ctx.fillText('v' + VERSION_JEU, LARGEUR - 8, HAUTEUR - 8);
+  ctx.textAlign = 'left';
   dessinerConfirmation();
 }
 
@@ -995,11 +1058,9 @@ function dessinerCredits() {
     ctx.drawImage(logos.imagine, LARGEUR / 2 - w / 2, 92, w, h);
     ctx.globalAlpha = 1;
   }
-  if (logos.hwr) {
-    ctx.globalAlpha = 0.92;
-    ctx.drawImage(logos.hwr, LARGEUR / 2 - 31, 166, 62, 62);
-    ctx.globalAlpha = 1;
-  }
+  ctx.globalAlpha = 0.92;
+  dessinerLogoHwr(LARGEUR / 2, 197, 62);
+  ctx.globalAlpha = 1;
 
   texteCentre('Un jeu IMAGINe Studio · développement par HwR Engine',
               248, '11px system-ui, sans-serif', 'rgba(255,255,255,.68)');
@@ -1118,6 +1179,13 @@ function activerZone(z) {
   if (!z) return;
   switch (z.action) {
     case 'demarrer':    lancerDemarrage(); break;
+    /* Le bandeau juridique. Ouvrir le texte compte comme l'avoir vu — c'est le
+       seul moment ou il est propose, et le redemander a chaque lancement
+       serait une nuisance, pas une garantie. */
+    case 'mentions-lien':    marquerMentionsLues(); ouvrirMentions('accueil'); break;
+    case 'mentions-retour':  fermerMentions(); break;
+    case 'controles-retour': fermerControles(); break;
+    case 'credit-lily':      ouvrirSoundcloudLily(); break;
     case 'menu':        indexMenu = z.valeur; menuValider(); break;
     case 'option-ligne': indexOptions = z.valeur; menuValider(); break;
     case 'jauge':

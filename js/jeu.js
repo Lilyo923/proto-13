@@ -1827,6 +1827,10 @@ function dessinerGrille(SAS) {
 }
 
 function dessinerPanneaux() {
+  // Les panneaux d'aide sont une interface, pas du decor : ils n'ont rien a
+  // faire dans une bande-annonce, ou ils donnaient a chaque plan l'air d'un
+  // tutoriel.
+  if (CINEMA) return;
   ctx.font = '10px system-ui, sans-serif';
   ctx.textAlign = 'left';
   for (const p of PANNEAUX) {
@@ -2015,6 +2019,37 @@ function dessinerBrad() {
   const cx = Math.round(brad.x + brad.w / 2 - cam.x);
   const bas = Math.round(brad.y + brad.h - cam.y);
 
+  /* L'AURA DE CHARGE. Une aptitude qui se declenche en TENANT un bouton doit
+     se voir pendant qu'on le tient, sinon le joueur ne sait pas s'il charge ou
+     s'il a rate son appui. L'anneau grossit, puis devient franc au moment ou
+     le coup devient charge. */
+  if (brad.charge > 0) {
+    const t = Math.min(1, brad.charge / CHARGE_SEUIL);
+    const pret = brad.charge >= CHARGE_SEUIL;
+    const r = 14 + t * 10 + (pret ? Math.sin(brad.charge * 18) * 1.5 : 0);
+    ctx.save();
+    ctx.globalAlpha = pret ? 0.85 : 0.2 + t * 0.4;
+    ctx.strokeStyle = pret ? '#ffe9a8' : 'rgba(232,182,44,.8)';
+    ctx.lineWidth = pret ? 2 : 1;
+    ctx.beginPath();
+    ctx.arc(cx, bas - brad.h / 2, r, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Le plaquage laisse une trainee : c'est ce qui distingue une charge d'une
+  // simple course rapide.
+  if (brad.plaquage > 0) {
+    ctx.save();
+    ctx.globalAlpha = Math.min(0.5, brad.plaquage * 1.8);
+    ctx.fillStyle = '#e8b62c';
+    for (let i = 1; i <= 3; i++) {
+      ctx.globalAlpha = Math.min(0.34, brad.plaquage * 1.4) / i;
+      ctx.fillRect(cx - brad.sens * i * 9 - brad.w / 2, bas - brad.h + 8, brad.w, brad.h - 12);
+    }
+    ctx.restore();
+  }
+
   ctx.fillStyle = brad.auSol ? 'rgba(0,0,0,.32)' : 'rgba(0,0,0,.16)';
   ctx.beginPath();
   ctx.ellipse(cx, bas, brad.w * (brad.auSol ? 0.5 : 0.34), 3.5, 0, 0, Math.PI * 2);
@@ -2119,10 +2154,52 @@ function dessinerBoule(x, y, phase) {
   ctx.restore();
 }
 
+/* La tourelle : un petit boitier qui flotte derriere Brad, avec un canon qui
+   pointe la ou elle va tirer et une diode qui s'allume quand elle est prete.
+   Dessinee en primitives — elle n'a pas besoin d'une planche pour trois
+   rectangles, et elle suit la palette du jeu. */
+function dessinerTourelle() {
+  if (typeof tourelle === 'undefined' || !tourelle.active) return;
+  const x = Math.round(tourelle.x - cam.x);
+  const y = Math.round(tourelle.y - cam.y);
+
+  ctx.save();
+  // Ombre portee au sol, pour qu'elle ne flotte pas dans le vide.
+  ctx.fillStyle = 'rgba(0,0,0,.18)';
+  ctx.beginPath();
+  ctx.ellipse(x, y + 26, 7, 2.5, 0, 0, 6.2832);
+  ctx.fill();
+
+  ctx.fillStyle = '#2b3042';
+  ctx.fillRect(x - 7, y - 5, 14, 11);
+  ctx.fillStyle = '#434b63';
+  ctx.fillRect(x - 7, y - 5, 14, 3);
+  // Le canon, du cote ou regarde Brad.
+  ctx.fillStyle = '#767f9c';
+  ctx.fillRect(x + (brad.sens > 0 ? 6 : -11), y - 1, 5, 4);
+  // La diode : verte quand elle peut tirer, rouge quand elle recharge.
+  ctx.fillStyle = tourelle.recharge > 0 ? 'rgba(226,85,59,.85)' : 'rgba(126,224,138,.95)';
+  ctx.fillRect(x - 2, y + 1, 3, 3);
+  ctx.restore();
+}
+
 function dessinerBoules() {
   for (const b of boules) {
     // Clignotement quand la boule posee va disparaitre.
     if (b.posee > 0 && b.posee < 2 && Math.floor(b.posee * 8) % 2 === 0) continue;
+    // Le tir de la tourelle n'est pas une boule a serra : c'est un trait
+    // d'energie. Meme physique, autre dessin — sinon on croit avoir lance
+    // quelque chose qu'on n'a pas lance.
+    if (b.tourelle) {
+      const x = Math.round(b.x - cam.x), y = Math.round(b.y - cam.y);
+      ctx.save();
+      ctx.fillStyle = 'rgba(126,224,255,.28)';
+      ctx.fillRect(x - 3, y + 2, 16, 6);
+      ctx.fillStyle = '#bff0ff';
+      ctx.fillRect(x + 2, y + 3, 7, 4);
+      ctx.restore();
+      continue;
+    }
     dessinerBoule(Math.round(b.x - cam.x), Math.round(b.y - cam.y), b.phase);
     if (b.posee > 0) {
       ctx.fillStyle = 'rgba(232,182,44,.5)';
@@ -2257,7 +2334,12 @@ function dessinerTraces() {
 
 let fps = 60;
 
+/* Pendant la bande-annonce, l'interface disparait : on filme le jeu, pas
+   l'ecran de jeu. Le drapeau est pose par js/bandeannonce.js. */
+let CINEMA = false;
+
 function hud() {
+  if (CINEMA) return;
   // Barre de vie : une case par point, pour que le joueur lise sa vie d'un
   // coup d'oeil sans avoir a estimer une longueur.
   const x0 = 10, y0 = 8;
@@ -2303,6 +2385,7 @@ function hud() {
 }
 
 function bandeau() {
+  if (CINEMA) return;
   ctx.fillStyle = 'rgba(10,12,20,.72)';
   ctx.fillRect(0, HAUTEUR - 18, LARGEUR, 18);
   ctx.font = '10px ui-monospace, Menlo, Consolas, monospace';
@@ -2403,6 +2486,7 @@ function rendreNiveau() {
   dessinerRamassages();
   dessinerEnnemis();
   dessinerBoules();
+  dessinerTourelle();
   dessinerMeules();
   dessinerBrad();
   // Les rochers arrivent du ciel : ils passent devant tout le monde.
@@ -2433,6 +2517,8 @@ function rendu() {
     case 'menu':      dessinerMenu(); break;
     case 'options':   dessinerOptions(); break;
     case 'credits':   dessinerCredits(); break;
+    case 'mentions':  dessinerMentions(); break;
+    case 'controles': dessinerControles(); break;
     case 'difficulte': dessinerChoixDifficulte(); break;
     case 'dialogue':  dessinerDialogue(); break;
     case 'hub':       dessinerHub(); break;
@@ -2446,6 +2532,7 @@ function rendu() {
     case 'pret':      dessinerPret(); break;
     case 'final':     dessinerFinal(); break;
     case 'generique': dessinerGenerique(); break;
+    case 'bandeannonce': dessinerBandeAnnonce(); break;
     case 'jeu':       rendreNiveau(); break;
     case 'mort':      rendreNiveau(); ecranDeMort(); break;
     case 'fin':       rendreNiveau(); dessinerFinNiveau(); break;
@@ -2488,11 +2575,69 @@ function relancerNiveau(id) {
   scene = 'jeu';
 }
 
+/* =============================================================================
+   LA BOUCLE NE DOIT JAMAIS MOURIR
+
+   `requestAnimationFrame(boucle)` etait la DERNIERE instruction de la fonction.
+   Consequence : n'importe quelle exception levee pendant une image — un rendu,
+   une collision, un cas de bord jamais vu — sortait de la fonction avant cette
+   ligne, la prochaine image n'etait jamais demandee, et le jeu s'arretait pour
+   de bon. C'est exactement le symptome decrit : « en plein combat, le jeu peut
+   ne plus marcher ».
+
+   Le corps de l'image est donc isole. Quoi qu'il arrive, l'image suivante est
+   demandee. Une faute devient un hoquet d'une image au lieu d'une partie
+   perdue — et elle est RETENUE, pour qu'on sache enfin laquelle c'etait.
+========================================================================== */
+
+const incidents = { nombre: 0, dernier: '', t: 0 };
+
+function noterIncident(e) {
+  incidents.nombre++;
+  incidents.dernier = (e && (e.stack || e.message)) ? String(e.stack || e.message) : String(e);
+  incidents.t = 4;
+  // Une seule trace en console par incident : de quoi diagnostiquer sans noyer.
+  try { console.error('[incident image ' + incidents.nombre + ']', e); } catch (_) {}
+}
+
 function boucle(maintenant) {
+  try {
+    imageDuJeu(maintenant);
+  } catch (e) {
+    noterIncident(e);
+  }
+  // Le bandeau d'incident est dessine A PART : si c'est `rendu()` qui a
+  // echoue, il faut quand meme que le joueur voie qu'il s'est passe quelque
+  // chose — et qu'il puisse me le rapporter.
+  if (incidents.t > 0) { try { dessinerIncident(); } catch (_) {} }
+  requestAnimationFrame(boucle);
+}
+
+function dessinerIncident() {
+  incidents.t -= 1 / 60;
+  const a = Math.min(1, incidents.t / 0.6);
+  ctx.save();
+  ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(120,20,20,.92)';
+  ctx.fillRect(0, HAUTEUR - 26, LARGEUR, 26);
+  ctx.font = '10px ui-monospace, Menlo, Consolas, monospace';
+  ctx.fillStyle = '#ffd9d9';
+  ctx.textAlign = 'left';
+  ctx.fillText('incident n°' + incidents.nombre + ' — le jeu continue. F1 pour le détail.',
+               10, HAUTEUR - 10);
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+function imageDuJeu(maintenant) {
   let delta = (maintenant - dernier) / 1000;
   dernier = maintenant;
   if (delta > 0.25) delta = 0.25;
   fps += (1 / Math.max(delta, 1e-4) - fps) * 0.1;
+
+  // La manette est interrogee une fois par image, avant la simulation : elle
+  // se lit, elle ne s'ecoute pas. Voir le bas de js/entrees.js.
+  majManette();
 
   accumulateur += delta;
   let garde = 0;
@@ -2536,6 +2681,10 @@ function boucle(maintenant) {
       majChargement(PAS);
     } else if (scene === 'generique') {
       majGenerique(PAS);
+    } else if (scene === 'bandeannonce') {
+      // Le montage a sa propre horloge, calee sur la piste : voir
+      // l'en-tete de js/bandeannonce.js.
+      majBandeAnnonce(PAS);
     } else if (scene === 'final') {
       // Le combat final a sa propre simulation, complete et separee : voir
       // l'en-tete de js/final.js pour la raison.
@@ -2552,7 +2701,6 @@ function boucle(maintenant) {
   }
 
   rendu();
-  requestAnimationFrame(boucle);
 }
 
 /* -----------------------------------------------------------------------------

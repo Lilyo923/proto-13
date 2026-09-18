@@ -751,7 +751,7 @@ const DIALOGUE_EXPLOSION = [
   { qui: 'brad', fond: 'faille-lille',
     texte: '…Pourquoi Lille ?' },
   { qui: 'braddy', fond: 'faille-lille',
-    texte: 'PARCE QUE C\'EST LÀ QUE TU AS GRANDI, BRAD. Il ne choisit jamais une ville au hasard. Rentre à la base. Prends tout ce que tu peux prendre. Cette fois, il n\'y aura pas de suivante.' },
+    texte: 'PARCE QUE C\'EST LÀ QU\'IL A ÉTÉ DÉTECTÉ POUR LA DERNIÈRE FOIS DANS LE MONDE RÉEL. Il ne choisit jamais une ville au hasard. Rentre à la base. Prends tout ce que tu peux prendre. Cette fois, il n\'y aura pas de suivante.' },
 ];
 
 const DIALOGUE_PORTAIL = [
